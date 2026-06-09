@@ -1,4 +1,4 @@
-# Components — Trip Planning MVP
+# Components — Wayfold
 
 ## Purpose
 

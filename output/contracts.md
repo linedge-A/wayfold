@@ -1,4 +1,4 @@
-# Contracts — Trip Planning MVP
+# Contracts — Wayfold
 
 ## Purpose
 

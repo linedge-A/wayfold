@@ -4,7 +4,7 @@ import zipfile
 out = Path('output')
 out.mkdir(exist_ok=True)
 
-contracts = r'''# Contracts — Trip Planning MVP
+contracts = r'''# Contracts — Wayfold
 
 ## Purpose
 
@@ -230,7 +230,7 @@ A module is contract-compliant only if:
 - it handles hard-pin behavior consistently.
 '''
 
-components = r'''# Components — Trip Planning MVP
+components = r'''# Components — Wayfold
 
 ## Purpose
 
@@ -431,7 +431,7 @@ interface BookingRecordCardProps {
 - New component types must be added here before implementation.
 '''
 
-seed = r'''# Seed Data — Trip Planning MVP
+seed = r'''# Seed Data — Wayfold
 
 ## Purpose
 
@@ -588,7 +588,7 @@ These should be concise and user-facing.
 - If seed data changes, update all examples in one pass.
 '''
 
-merge = r'''# Merge Checklist — Trip Planning MVP
+merge = r'''# Merge Checklist — Wayfold
 
 ## Purpose
 

@@ -1,4 +1,4 @@
-# Agent Guide — Trip Planning MVP
+# Agent Guide — Wayfold
 
 ## Purpose
 

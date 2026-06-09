@@ -1,4 +1,4 @@
-# Merge Checklist — Trip Planning MVP
+# Merge Checklist — Wayfold
 
 ## Purpose
 

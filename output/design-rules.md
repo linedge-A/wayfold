@@ -1,4 +1,4 @@
-# Design Rules — Trip Planning MVP
+# Design Rules — Wayfold
 
 ## Purpose
 

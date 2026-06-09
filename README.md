@@ -1,4 +1,4 @@
-# Trip Planning MVP
+# Wayfold
 
 Itinerary-first AI trip planning workspace. Multi-agent development repo.
 

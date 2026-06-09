@@ -1,4 +1,4 @@
-# Seed Data — Trip Planning MVP
+# Seed Data — Wayfold
 
 ## Purpose
 

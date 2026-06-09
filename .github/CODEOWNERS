@@ -1,4 +1,4 @@
-# CODEOWNERS — Trip Planning MVP
+# CODEOWNERS — Wayfold
 # Maps protected paths to their owning agents.
 # Agents listed here must approve PRs that touch these paths.
 # Update agent GitHub handles when team is assigned.

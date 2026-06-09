@@ -1,4 +1,4 @@
-# Roadmap — Multi-Agent Workflow for Trip Planning MVP
+# Roadmap — Multi-Agent Workflow for Wayfold
 
 ## Goal
 
