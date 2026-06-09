@@ -1,0 +1,35 @@
+# CODEOWNERS — Trip Planning MVP
+# Maps protected paths to their owning agents.
+# Agents listed here must approve PRs that touch these paths.
+# Update agent GitHub handles when team is assigned.
+
+# Design system — Agent 1
+/design-system/                    @agent-1
+/output/design-rules.md            @agent-1
+
+# Shared contracts + events — Agent 9
+/shared/types/                     @agent-9
+/shared/events/                    @agent-9
+/output/contracts.md               @agent-9
+/tests/                            @agent-9
+
+# App shell + integration — Agent 0
+/app-shell/                        @agent-0
+/output/agent.md                   @agent-0
+/output/roadmap.md                 @agent-0
+/output/merge-checklist.md         @agent-0
+
+# Module ownership
+/modules/trip-brief/               @agent-2
+/modules/itinerary/                @agent-3
+/modules/map/                      @agent-4
+/modules/pocket/                   @agent-5
+/modules/ingestion/                @agent-5
+/modules/copilot/                  @agent-6
+/modules/revision-summary/         @agent-6
+/modules/constraint-engine/        @agent-7
+/modules/booking-records/          @agent-8
+
+# Seed data — Agent 0 + Agent 9
+/shared/mock-data/                 @agent-0 @agent-9
+/output/seed-data.md               @agent-0 @agent-9
