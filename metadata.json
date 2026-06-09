@@ -1,0 +1,6 @@
+{
+  "name": "WAYFOLD",
+  "description": "A desktop-first, itinerary-first trip-planning workspace with a travel copilot, pocket research manager, interactive map, and revision summaries.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

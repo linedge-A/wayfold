@@ -1,0 +1,94 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-error-container: #ffdad6;
+  --color-inverse-surface: #27313f;
+  --color-tertiary: #934700;
+  --color-primary: #005ab6;
+  --color-inverse-primary: #abc7ff;
+  --color-danger: #D64545;
+  --color-on-background: #121c2a;
+  --color-cat-food: #F2994A;
+  --color-surface-container-high: #dee9fc;
+  --color-surface-dim: #d0dbed;
+  --color-primary-fixed: #d7e3ff;
+  --color-tertiary-fixed-dim: #ffb688;
+  --color-surface: #f8f9ff;
+  --color-error: #ba1a1a;
+  --color-outline: #727785;
+  --color-cat-stay: #9B51E0;
+  --color-secondary: #5c5f60;
+  --color-surface-container: #e6eeff;
+  --color-surface-variant: #d9e3f6;
+  --color-on-tertiary: #ffffff;
+  --color-cat-sight: #2F80ED;
+  --color-on-tertiary-fixed-variant: #733600;
+  --color-cat-backup: #8D99AE;
+  --color-primary-fixed-dim: #abc7ff;
+  --color-on-secondary: #ffffff;
+  --color-tertiary-container: #b85a00;
+  --color-secondary-fixed-dim: #c5c7c8;
+  --color-border-subtle: #E6EAF0;
+  --color-surface-container-low: #eff4ff;
+  --color-surface-container-highest: #d9e3f6;
+  --color-cat-transit: #27AE60;
+  --color-bg-panel: #FFFFFF;
+  --color-surface-tint: #005cba;
+  --color-surface-bright: #f8f9ff;
+  --color-inverse-on-surface: #eaf1ff;
+  --color-accent-soft: #EAF3FF;
+  --color-bg-panel-muted: #F9FAFB;
+  --color-warning: #D48A00;
+  --color-secondary-container: #dee0e2;
+  --color-primary-container: #1672df;
+  --color-on-error: #ffffff;
+  --color-on-surface-variant: #414753;
+  --color-secondary-fixed: #e1e2e4;
+  --color-on-secondary-fixed-variant: #444749;
+  --color-on-primary-container: #fefcff;
+  --color-background: #f8f9ff;
+  --color-surface-container-lowest: #ffffff;
+  --color-on-tertiary-container: #fffbff;
+  --color-pin-soft: #7C8AA5;
+  --color-on-tertiary-fixed: #311300;
+  --color-tertiary-fixed: #ffdbc7;
+  --color-on-secondary-fixed: #191c1e;
+  --color-on-primary-fixed-variant: #00458e;
+  --color-on-surface: #121c2a;
+  --color-on-secondary-container: #606365;
+  --color-success: #1F9D68;
+  --color-outline-variant: #c1c6d5;
+  --color-on-primary-fixed: #001b3f;
+  --color-on-error-container: #93000a;
+  --color-on-primary: #ffffff;
+  --color-cat-booking: #EB5757;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-on-surface);
+  font-family: var(--font-sans);
+  height: 100vh;
+  margin: 0;
+  overflow: hidden;
+}
+
+/* Custom scrollbars matching product calm specs */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-border-subtle);
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-outline-variant);
+}
