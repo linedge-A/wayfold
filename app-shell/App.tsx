@@ -126,7 +126,7 @@ function AppContent() {
         startDate: appState.tripBrief.startDate,
         endDate: appState.tripBrief.endDate,
         stops: appState.itineraryItems.length,
-        imageUrl: appState.tripBrief.imageUrl
+        imageUrl: appState.tripBrief.image
       });
     }
     setIsShareModalOpen(true);
@@ -564,8 +564,8 @@ function AppContent() {
       startTime: timeStr,
       pinState: 'none',
       priority: 'medium',
-      lat: placeItem.lat || 45,
-      lng: placeItem.lng || 45,
+      lat: placeItem.lat ?? undefined,
+      lng: placeItem.lng ?? undefined,
     };
 
     setAppState(prev => {
@@ -637,8 +637,9 @@ function AppContent() {
 
       // 3. Process INSERTION
       const insertChange = selectedChanges.find(c => c.type === 'insert');
-      let createdItemId = 'place-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
+      let createdItemId: string | undefined;
       if (insertChange) {
+        createdItemId = 'place-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
         const newItemWithTime: ItineraryItem = {
           ...insertChange.itemData,
           id: createdItemId,
@@ -665,11 +666,13 @@ function AppContent() {
         items: col.items.filter(i => i.id !== optimizingItem.id)
       }));
 
-      // Fire off asynchronous dynamic Google Place enrichment for the newly added item
-      setTimeout(() => {
-        const itemCategory = insertChange?.itemData.category || 'sight';
-        triggerGoogleMapsEnrichment(createdItemId, insertChange?.itemTitle || '', itemCategory, 'itinerary');
-      }, 100);
+      // Fire enrichment only when an item was actually inserted
+      if (insertChange && createdItemId) {
+        const itemCategory = insertChange.itemData.category || 'sight';
+        setTimeout(() => {
+          triggerGoogleMapsEnrichment(createdItemId!, insertChange.itemTitle, itemCategory, 'itinerary');
+        }, 100);
+      }
 
       return {
         ...prev,
@@ -841,14 +844,16 @@ function AppContent() {
     }
 
     if (sug.type === 'Conflict Alert' && sug.timeShift) {
-      // Shifting Shigetsu Zen Lunch
+      // Match by current startTime so this works for any trip, not just Kyoto
       setAppState(prev => {
+        const conflictedItem = prev.itineraryItems.find(
+          item => item.startTime === sug.timeShift!.from
+        );
         const items = prev.itineraryItems.map(item => {
-          if (item.title.toLowerCase().includes('shigetsu')) {
+          if (item.startTime === sug.timeShift!.from) {
             return {
               ...item,
               startTime: sug.timeShift!.to,
-              endTime: '01:00 PM',
               note: 'Confirmed (Shifted to minimize crowds)'
             };
           }
@@ -858,10 +863,10 @@ function AppContent() {
         const newDelta: RevisionDelta = {
           id: 'delta-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9),
           type: 'time-shift',
-          itemTitle: 'Shigetsu Zen Lunch',
+          itemTitle: conflictedItem?.title || sug.title,
           from: sug.timeShift!.from,
           to: sug.timeShift!.to,
-          note: 'Shifted Wednesday slot to avoid excessive Tenryu-ji congestions.'
+          note: 'Shifted conflicting slot to avoid overcrowding.'
         };
 
         return {
@@ -1137,7 +1142,7 @@ function AppContent() {
               setOptimizationResult(null);
             }}
             newItem={optimizingItem}
-            dayName={appState.itineraryDays.find(d => d.id === appState.selectedDayId)?.name || 'Selected Day'}
+            dayName={appState.itineraryDays.find(d => d.id === appState.selectedDayId)?.fullDateString || appState.itineraryDays.find(d => d.id === appState.selectedDayId)?.label || 'Selected Day'}
             optimization={optimizationResult}
             onConfirm={handleConfirmOptimization}
           />

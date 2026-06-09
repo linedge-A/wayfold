@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-
+import { ItineraryItem } from '@/shared/types/index';
 
 /**
  * Fallback local response handler for Copilot commands if server-side Gemini is not configured.

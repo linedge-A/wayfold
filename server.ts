@@ -41,53 +41,61 @@ app.post('/api/copilot', async (req, res) => {
   const currentItems = appState?.itineraryItems || [];
   const norm = (query || '').toLowerCase();
 
-  // If live AI is ready, process through gemini-3.5-flash
+  // If live AI is ready, process through gemini-flash-latest
   if (ai) {
     try {
+      // Limit items sent to the model to avoid bloating the prompt
+      const MAX_ITEMS_IN_PROMPT = 50;
+      const itemsForPrompt = currentItems.slice(0, MAX_ITEMS_IN_PROMPT);
+
       const systemInstruction = `
-      You are the Travel Copilot inside Explorer Now. Your role is to intelligently refine, modify, or suggest adjustments to a Kyoto Spring 2024 trip calendar timeline in response to user commands.
-      Keep reply friendly, brief, design-focused, and highly focused on structural revisions.
-      
-      Current itinerary items list:
-      ${JSON.stringify(currentItems)}
+      You are the Travel Copilot inside Wayfold. Your role is to intelligently refine, modify, or suggest adjustments to the user's trip itinerary in response to their commands.
+      Keep replies friendly, brief, design-focused, and highly focused on structural revisions.
+
+      Current itinerary items (up to ${MAX_ITEMS_IN_PROMPT} shown):
+      ${JSON.stringify(itemsForPrompt)}
 
       Handle these major command cases optionally:
-      1. Lighten / lighter Day 3 / Wednesday: Suggest removing 'Otagi Nenbutsu-ji' (id: 'place-otagi') to create leisure breathing space.
-      2. Coffee / gourmet / detour: Suggest inserting a gourmet detour 'Kurasu Coffee' near Fushimi Inari (day-4, 11:30 AM).
-      3. Optimize / Reduce transit: Propose shifting Day 2 slots (Kiyomizu-dera to 9:00 AM, Nishiki Market to 11:30 AM) to optimize walking sequences.
-      4. Links / Blogs / Posts / Screenshot of recommendations (e.g. "5 best restaurants in Kyoto", "Gyoza Hohei", specific websites/maps links):
+      1. Lighten / lighter / pacing: Suggest removing the lowest-priority, non-hard-pinned item to create breathing space.
+      2. Coffee / gourmet / detour / food: Suggest inserting a relevant local food or coffee detour item.
+      3. Optimize / Reduce transit: Propose time-shifts to reduce overall walking or transit time based on the actual item locations and times.
+      4. Links / Blogs / Posts / Screenshot of recommendations (e.g. restaurant lists, specific websites/maps links):
          Identify and extract up to 5 suggested places or restaurants, build PlaceItem objects, and embed them in a suggestion under the "itemsToAdd" attribute.
 
       Provide your human-focused chat answer. If changes are appropriate, append a formatted \`\`\`json-update codeblock at the end containing:
       {
         "updatedItems": [...new items array if changing the existing calendar],
-        "deltas": [{ "id": "...", "type": "move|add|drop|time-shift", "itemTitle": "... ", "note": "..." }],
+        "deltas": [{ "id": "...", "type": "move|add|drop|time-shift", "itemTitle": "...", "note": "..." }],
         "suggestion": {
           "type": "Smart Add",
           "title": "Import spots/restaurants to Saved Pocket",
-          "description": "Found some incredible spots from your link/recommendation. Overviews: Gyoza Hohei, woodfired spots, or local sights.",
+          "description": "Found some great spots from your link/recommendation.",
           "actionLabel": "Save to Bucket List",
           "itemsToAdd": [
             {
               "id": "place-import-[unique]",
               "title": "[Name]",
               "category": "food" | "sight",
-              "area": "[Kyoto neighborhood e.g. Gion, Shimogyo Ward]",
+              "area": "[neighborhood or district]",
               "tags": ["[tag]", ...],
               "subCategory": "[Brief subcategory description]",
-              "budget": "¥1,500" | "Free",
+              "budget": "[price string]",
               "openingHours": "[hours]",
-              "lat": [random number between 30 and 60],
-              "lng": [random number between 20 and 60]
+              "lat": [latitude],
+              "lng": [longitude]
             }
           ]
         }
       }
       `;
 
+      // Sanitize: cap query length and cast to string to prevent prompt injection
+      const MAX_QUERY_LENGTH = 2000;
+      const safeQuery = String(query || '').slice(0, MAX_QUERY_LENGTH);
+
       const response = await ai.models.generateContent({
-        model: 'gemini-3.5-flash',
-        contents: query,
+        model: process.env.GEMINI_FLASH_MODEL || 'gemini-flash-latest',
+        contents: safeQuery,
         config: {
           systemInstruction: systemInstruction,
           temperature: 0.2,
@@ -279,19 +287,28 @@ app.post('/api/copilot', async (req, res) => {
   }
 
   if (norm.includes('lighter') || norm.includes('lighten')) {
-    const updated = currentItems.filter((i: any) => i.id !== 'place-otagi');
-    const droppedItem = currentItems.find((i: any) => i.id === 'place-otagi');
+    // Data-driven: drop the lowest-priority, non-hard-pinned item across all days
+    const priorityRank: Record<string, number> = { low: 0, medium: 1, high: 2 };
+    const candidates = currentItems.filter((i: any) => i.pinState !== 'hard');
+    const droppedItem = candidates.sort(
+      (a: any, b: any) => (priorityRank[a.priority] ?? 1) - (priorityRank[b.priority] ?? 1)
+    )[0];
 
+    if (!droppedItem) {
+      return res.json({ message: "All items are hard-pinned — nothing to remove for a lighter schedule." });
+    }
+
+    const updated = currentItems.filter((i: any) => i.id !== droppedItem.id);
     return res.json({
-      message: "I've processed your instruction: Wednesday (Day 3) has been lightened by removing 'Otagi Nenbutsu-ji' to maximize pacing flexibility around Arashiyama.",
+      message: `I've lightened your schedule by removing '${droppedItem.title}' to create more breathing room.`,
       updatedItems: updated,
       deltas: [
         {
           id: 'delta-lighten-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9),
           type: 'drop',
-          itemTitle: droppedItem?.title || 'Otagi Nenbutsu-ji',
-          from: '03:00 PM',
-          note: 'Lightened Wednesday afternoon block to avoid tourist fatigue.'
+          itemTitle: droppedItem.title,
+          from: droppedItem.startTime,
+          note: 'Removed lowest-priority item to create a more relaxed pacing.'
         }
       ]
     });

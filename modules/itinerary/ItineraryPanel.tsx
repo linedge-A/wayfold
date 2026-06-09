@@ -54,11 +54,12 @@ const END_HOUR = 22;  // 10 PM
 const HOUR_HEIGHT = 32; // Reduced from 38
 const MINUTE_HEIGHT = HOUR_HEIGHT / 60;
 
-const parseTimeToMinutes = (timeStr?: string): number | null => {
-  if (!timeStr) return null;
+// Returns minutes-since-midnight; defaults to 540 (9 AM) to match optimizer.ts behaviour.
+const parseTimeToMinutes = (timeStr?: string): number => {
+  if (!timeStr) return 540;
   const cleaned = timeStr.trim().toUpperCase();
   const match = cleaned.match(/^(\d+)(?::(\d+))?\s*(AM|PM)?$/);
-  if (!match) return null;
+  if (!match) return 540;
   
   let hour = parseInt(match[1], 10);
   let minute = match[2] ? parseInt(match[2], 10) : 0;
@@ -345,11 +346,12 @@ export default function ItineraryPanel({
 
   const START_MINUTES = START_HOUR * 60;
 
-  const flexibleItems = currentDayItems.filter(item => parseTimeToMinutes(item.startTime) === null);
+  // Items with no startTime are shown in the "Flexible & All-Day" section
+  const flexibleItems = currentDayItems.filter(item => !item.startTime);
 
-  const timedItems = currentDayItems.filter(item => parseTimeToMinutes(item.startTime) !== null)
+  const timedItems = currentDayItems.filter(item => !!item.startTime)
     .map(item => {
-      const min = parseTimeToMinutes(item.startTime)!;
+      const min = parseTimeToMinutes(item.startTime);
       const duration = item.estimatedDurationMin || 60;
       const top = (min - START_MINUTES) * MINUTE_HEIGHT;
       const calculatedHeight = duration * MINUTE_HEIGHT;
@@ -944,13 +946,8 @@ export default function ItineraryPanel({
                 {/* Absolute Inline Add Form */}
                 {showAddForm && (() => {
                   const newTimeMinutes = parseTimeToMinutes(newTime);
-                  let formTop = 0;
-                  if (newTimeMinutes !== null) {
-                    const minutesClamp = Math.max(START_MINUTES, Math.min((END_HOUR + 1) * 60, newTimeMinutes));
-                    formTop = (minutesClamp - START_MINUTES) * MINUTE_HEIGHT;
-                  } else {
-                    formTop = (9 * 60 - START_MINUTES) * MINUTE_HEIGHT;
-                  }
+                  const minutesClamp = Math.max(START_MINUTES, Math.min((END_HOUR + 1) * 60, newTimeMinutes));
+                  const formTop = (minutesClamp - START_MINUTES) * MINUTE_HEIGHT;
 
                   // Adjust the overlay upward slightly if it's too close to the end of the day, to keep it within view
                   const containerMaxHeight = (END_HOUR - START_HOUR + 1) * HOUR_HEIGHT;
