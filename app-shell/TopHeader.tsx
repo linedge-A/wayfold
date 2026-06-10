@@ -6,20 +6,23 @@
 import { useState } from 'react';
 import { Bell, Settings, ChevronDown, Plus, FileText } from 'lucide-react';
 import PlanInitiateModal from '@/modules/trip-brief/PlanInitiateModal';
+import type { EngineItem } from '@/modules/constraint-engine/planner';
 
 interface TopHeaderProps {
   onToggleViewSheet?: () => void;
   showComponentSheet?: boolean;
   currentView: 'plan' | 'trips' | 'explore';
   onViewChange: (view: 'plan' | 'trips' | 'explore') => void;
+  pool?: EngineItem[];                       // candidate pool for generation (from the Research Pocket)
+  onGenerated?: (result: any) => void;       // generated proposal → App state
 }
 
-export default function TopHeader({ onToggleViewSheet, showComponentSheet, currentView, onViewChange }: TopHeaderProps) {
+export default function TopHeader({ onToggleViewSheet, showComponentSheet, currentView, onViewChange, pool, onGenerated }: TopHeaderProps) {
   const [isPlanOpen, setIsPlanOpen] = useState(false);
   const [isInitiateModalOpen, setIsInitiateModalOpen] = useState(false);
 
-  const handleStartPlanning = (data: any) => {
-    console.log('Starting planning with:', data);
+  const handleStartPlanning = (result: any) => {
+    onGenerated?.(result);
     setIsInitiateModalOpen(false);
     setIsPlanOpen(false);
     onViewChange('plan');
@@ -136,10 +139,11 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
           LR
         </div>
       </div>
-      <PlanInitiateModal 
+      <PlanInitiateModal
         isOpen={isInitiateModalOpen}
         onClose={() => setIsInitiateModalOpen(false)}
         onStartPlanning={handleStartPlanning}
+        pool={pool}
       />
     </header>
   );
