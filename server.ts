@@ -9,6 +9,7 @@ import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import { extractCandidates } from './modules/ingestion/extractCandidates';
 import { dispatchIngestion, toSuggestion } from './modules/ingestion/dispatchIngestion';
+import { enqueue, listPending, ack } from './modules/ingestion/captureQueue';
 
 dotenv.config();
 
@@ -475,6 +476,32 @@ app.post('/api/ingest', async (req, res) => {
   }
 
   return res.json({ message: result.warnings[0] || 'No bookings or places found.', bookings: [], candidates: [] });
+});
+
+// ── Capture inbox: the bridge for surfaces that can't mutate trip state directly (the extension). ──
+// There is no server-side trip store — the web app holds state client-side. So a capture is QUEUED
+// per account here; the web app drains it on load/focus and applies it through the existing paths
+// (candidates → Pocket suggestion, bookings → applyBookings). Reuses, doesn't re-implement.
+const accountOf = (req: any): string => {
+  const m = String(req.headers?.authorization || '').match(/^Bearer\s+(.+)$/i);
+  return m ? m[1].slice(0, 64) : 'default';
+};
+
+app.post('/api/ingest/commit', (req, res) => {
+  const { bookings, candidates, source } = req.body || {};
+  if (!(bookings?.length) && !(candidates?.length)) return res.status(400).json({ ok: false, message: 'Nothing to commit.' });
+  const account = accountOf(req);
+  const rec = enqueue(account, { bookings, candidates, source });
+  return res.json({ ok: true, id: rec.id, queued: listPending(account).length });
+});
+
+app.get('/api/ingest/pending', (req, res) => {
+  return res.json({ captures: listPending(accountOf(req)) });
+});
+
+app.post('/api/ingest/ack', (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  return res.json({ ok: true, cleared: ack(accountOf(req), ids) });
 });
 
 // Configure Vite middleware in development, serve compiled SPA assets in production
