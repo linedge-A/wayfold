@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { width: 320px; margin: 0; font: 13px/1.4 system-ui, sans-serif; color: #1a1a1a; }
+    header { padding: 12px 14px; border-bottom: 1px solid #eee; font-weight: 600; }
+    #status { padding: 10px 14px; color: #666; }
+    ul { list-style: none; margin: 0; padding: 0 14px 8px; }
+    li { padding: 6px 0; border-bottom: 1px solid #f2f2f2; }
+    .tag { font-size: 11px; color: #888; }
+    .booking { color: #1565c0; }
+    footer { padding: 10px 14px; border-top: 1px solid #eee; }
+    button { width: 100%; padding: 8px; border: 0; border-radius: 6px; background: #1565c0; color: #fff; font-weight: 600; cursor: pointer; }
+    button:disabled { background: #b0bec5; cursor: default; }
+  </style>
+</head>
+<body>
+  <header>Save to Wayfold</header>
+  <div id="status">Reading this page…</div>
+  <ul id="results"></ul>
+  <footer><button id="save" disabled>Add to my trip</button></footer>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
