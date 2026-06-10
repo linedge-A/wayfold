@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Copilot orchestrator — the bridge that wires the deterministic OPTIMIZER ENGINE
- * (modules/generator) and the INGESTION pipeline (modules/ingestion) into copilot
+ * (modules/constraint-engine) and the INGESTION pipeline (modules/ingestion) into copilot
  * commands, honouring the user's remembered preferences (AGENTS.md → userPreferences).
  *
  * Dependency direction is safe: copilot → generator, copilot → ingestion, copilot →
@@ -16,7 +16,7 @@
  *                         surfaced as a Smart-Add suggestion (draft-to-Pocket per AGENTS.md).
  */
 import type { ItineraryItem, PlaceItem, RevisionDelta } from '../../shared/types/index';
-import { generateItinerary } from '../generator/planner';
+import { generateItinerary } from '../constraint-engine/planner';
 import { extractCandidates, type IngestedCandidate } from '../ingestion/extractCandidates';
 import { USER_PREFERENCES, prefsToBrief, type UserPreferences } from './userPreferences';
 
