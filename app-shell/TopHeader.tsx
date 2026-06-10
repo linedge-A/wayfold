@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { Bell, Settings, ChevronDown, Plus, FileText } from 'lucide-react';
 import PlanInitiateModal from '@/modules/trip-brief/PlanInitiateModal';
 import type { EngineItem } from '@/modules/constraint-engine/planner';
+import { TRIPS } from '@/shared/mock-data/trips';
 
 interface TopHeaderProps {
   onToggleViewSheet?: () => void;
@@ -15,9 +16,10 @@ interface TopHeaderProps {
   onViewChange: (view: 'plan' | 'trips' | 'explore') => void;
   pool?: EngineItem[];                       // candidate pool for generation (from the Research Pocket)
   onGenerated?: (result: any) => void;       // generated proposal → App state
+  onLoadTrip?: (tripId: string) => void;     // switch the active trip
 }
 
-export default function TopHeader({ onToggleViewSheet, showComponentSheet, currentView, onViewChange, pool, onGenerated }: TopHeaderProps) {
+export default function TopHeader({ onToggleViewSheet, showComponentSheet, currentView, onViewChange, pool, onGenerated, onLoadTrip }: TopHeaderProps) {
   const [isPlanOpen, setIsPlanOpen] = useState(false);
   const [isInitiateModalOpen, setIsInitiateModalOpen] = useState(false);
 
@@ -31,7 +33,7 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
   return (
     <header className="flex justify-between items-center px-3 w-full h-[48px] bg-white border-b border-border-subtle shrink-0">
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => onViewChange('plan')}>
+        <div className="flex items-center gap-2 cursor-pointer" onClick={() => onViewChange('explore')}>
           <span className="font-brand text-2xl font-bold tracking-[-0.03em] text-primary lowercase">WAYFOLD</span>
         </div>
         <nav className="hidden md:flex items-center gap-4 h-full">
@@ -75,28 +77,22 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
                   
                   <div className="mt-2 pt-2 border-t border-border-subtle">
                     <div className="px-3 pb-1.5 flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Planning Drafts</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Your Trips</span>
                     </div>
-                    <button 
-                      onClick={() => {
-                        onViewChange('plan');
-                        setIsPlanOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-on-surface-variant hover:bg-slate-50 transition-colors cursor-pointer text-left"
-                    >
-                      <FileText className="w-3.5 h-3.5 text-slate-300" />
-                      Kyoto Autumn 2026
-                    </button>
-                    <button 
-                      onClick={() => {
-                        onViewChange('plan');
-                        setIsPlanOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-on-surface-variant hover:bg-slate-50 transition-colors cursor-pointer text-left"
-                    >
-                      <FileText className="w-3.5 h-3.5 text-slate-300" />
-                      Tokyo Food Sprint
-                    </button>
+                    {Object.values(TRIPS).map(t => (
+                      <button
+                        key={t.tripBrief.id}
+                        onClick={() => {
+                          if (onLoadTrip) onLoadTrip(t.tripBrief.id);
+                          else onViewChange('plan');
+                          setIsPlanOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-on-surface-variant hover:bg-slate-50 transition-colors cursor-pointer text-left"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-slate-300" />
+                        {t.tripBrief.title}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </>
