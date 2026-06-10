@@ -28,6 +28,7 @@ export interface PlaceItem {
   tripRole?: 'anchor' | 'supporting' | 'optional';
   reservationBound?: boolean;
   tags?: string[];
+  group?: string; // organizing cluster for the Research Pocket (area / day label, set at ingestion); used to group the pocket and surface day-relevant POIs while planning
   subCategory?: string;
   budget?: string;
   openingHours?: string;

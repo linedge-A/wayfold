@@ -182,6 +182,7 @@ export function extractCandidates(input: IngestInput): IngestedCandidate[] {
       title: phrase,
       category,
       area: areaHint,
+      ...(areaHint ? { group: areaHint } : {}), // organizing cluster for the pocket (e.g. the area/day this batch was pasted under)
       sourceType,
       tags,
       openingHours,

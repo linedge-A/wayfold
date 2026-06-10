@@ -18,6 +18,10 @@ interface PocketPanelProps {
   selectedItemId?: string;
   onSelectItem?: (id: string | undefined) => void;
   onDropCalendarItem?: (itemId: string, targetColumnId: string) => void;
+  /** Area of the day currently focused in the planner — used to surface relevant saved POIs. */
+  focusedDayArea?: string;
+  /** Label of the focused day (e.g. "Wed 14") for the relevance chip. */
+  focusedDayLabel?: string;
 }
 
 export default function PocketPanel({ 
@@ -28,12 +32,27 @@ export default function PocketPanel({
   onRemovePocketItem,
   selectedItemId,
   onSelectItem,
-  onDropCalendarItem
+  onDropCalendarItem,
+  focusedDayArea,
+  focusedDayLabel
 }: PocketPanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<'all' | 'must-see' | 'food-drink'>('all');
   const [sortBy, setSortBy] = useState<'name' | 'category' | 'rating'>('name');
+  const [groupBy, setGroupBy] = useState<'category' | 'area'>('category');
+  const [onlyRelevant, setOnlyRelevant] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+
+  // Relevance: an item is relevant to the focused day when its group/area shares a
+  // word with the day's area. Cheap token overlap — no contract or proximity math needed.
+  const tokenize = (s?: string) => (s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2);
+  const focusTokens = tokenize(focusedDayArea);
+  const hasFocus = focusTokens.length > 0;
+  const isRelevant = (item: PlaceItem) => {
+    if (!hasFocus) return false;
+    const hay = tokenize(`${item.group || ''} ${item.area || ''}`);
+    return focusTokens.some(t => hay.includes(t));
+  };
   const [showAddView, setShowAddView] = useState(false);
   
   // Add Place States
@@ -126,23 +145,52 @@ export default function PocketPanel({
     // Apply search query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      filtered = filtered.filter(item => 
+      filtered = filtered.filter(item =>
         item.title.toLowerCase().includes(q) ||
         item.area.toLowerCase().includes(q) ||
         (item.subCategory && item.subCategory.toLowerCase().includes(q))
       );
     }
 
-    // Apply sorting
+    // Narrow to spots relevant to the focused day, when that lens is on
+    if (onlyRelevant && hasFocus) {
+      filtered = filtered.filter(isRelevant);
+    }
+
+    // Apply sorting — relevant-to-the-focused-day spots float to the top
     return [...filtered].sort((a, b) => {
+      if (hasFocus && !onlyRelevant) {
+        const ra = isRelevant(a) ? 0 : 1;
+        const rb = isRelevant(b) ? 0 : 1;
+        if (ra !== rb) return ra - rb;
+      }
       if (sortBy === 'name') return a.title.localeCompare(b.title);
       if (sortBy === 'category') return a.category.localeCompare(b.category);
       if (sortBy === 'rating') return (b.rating || 0) - (a.rating || 0);
       return 0;
     });
-  }, [pocket, activeCategory, searchQuery, sortBy]);
+  }, [pocket, activeCategory, searchQuery, sortBy, onlyRelevant, hasFocus, focusedDayArea]);
 
   const displayColumns = useMemo(() => {
+    // Group by area / day cluster: build columns dynamically from item.group (falling back to area)
+    if (groupBy === 'area') {
+      const groups = new Map<string, PlaceItem[]>();
+      for (const item of allItems) {
+        const key = (item.group || item.area || 'Unsorted').trim() || 'Unsorted';
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(item);
+      }
+      const cols = [...groups.entries()].map(([id, items]) => ({ id: `area:${id}`, title: id, items }));
+      // Relevant cluster(s) first, then larger clusters, Unsorted last
+      return cols.sort((a, b) => {
+        const ar = hasFocus && a.items.some(isRelevant) ? 0 : 1;
+        const br = hasFocus && b.items.some(isRelevant) ? 0 : 1;
+        if (ar !== br) return ar - br;
+        if (a.title === 'Unsorted') return 1;
+        if (b.title === 'Unsorted') return -1;
+        return b.items.length - a.items.length;
+      });
+    }
     if (activeCategory === 'all') {
       return pocket.map(col => ({
         ...col,
@@ -158,7 +206,7 @@ export default function PocketPanel({
       title: activeCategory === 'food-drink' ? 'Food & Drink' : 'Must See',
       items: allItems
     }];
-  }, [pocket, allItems, activeCategory]);
+  }, [pocket, allItems, activeCategory, groupBy, hasFocus, focusedDayArea]);
 
   return (
     <section className="flex-1 bg-white border border-border-subtle rounded-2xl overflow-hidden shadow-sm flex flex-col min-h-[160px]">
@@ -189,15 +237,26 @@ export default function PocketPanel({
             )}
           </div>
           
-          <button 
+          {hasFocus && (
+            <button
+              onClick={() => setOnlyRelevant(v => !v)}
+              title={`Show only saved spots relevant to ${focusedDayLabel || 'this day'}`}
+              className={`flex items-center gap-1 px-2 py-1.5 rounded-lg border text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer ${onlyRelevant ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white text-secondary border-slate-200 hover:bg-slate-50'}`}
+            >
+              <MapPin className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{focusedDayLabel || 'This day'}</span>
+            </button>
+          )}
+
+          <button
             onClick={() => setShowFilters(!showFilters)}
             className={`p-1.5 rounded-lg border transition-all cursor-pointer ${showFilters ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white text-secondary border-slate-200 hover:bg-slate-50'}`}
             title="Filter and Sort"
           >
             <Filter className="w-4 h-4" />
           </button>
-          
-          <button 
+
+          <button
             onClick={() => setShowAddView(!showAddView)}
             className={`p-1.5 rounded-lg border transition-all cursor-pointer ${showAddView ? 'bg-primary text-white border-primary shadow-sm' : 'bg-primary text-white border-primary hover:bg-accent-primary-hover shadow-sm'}`}
             title="Add New Place"
@@ -220,6 +279,21 @@ export default function PocketPanel({
                   className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all capitalize cursor-pointer ${activeCategory === cat ? 'bg-primary text-white shadow-sm' : 'text-secondary hover:bg-slate-50'}`}
                 >
                   {cat.replace('-', ' ')}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Group by:</span>
+            <div className="flex bg-white p-0.5 rounded-lg border border-slate-200">
+              {(['category', 'area'] as const).map(g => (
+                <button
+                  key={g}
+                  onClick={() => setGroupBy(g)}
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${groupBy === g ? 'bg-primary text-white shadow-sm' : 'text-secondary hover:bg-slate-50'}`}
+                >
+                  {g === 'area' ? 'Area / Day' : 'Category'}
                 </button>
               ))}
             </div>
@@ -409,7 +483,12 @@ export default function PocketPanel({
                     if (dataStr) {
                       const data = JSON.parse(dataStr);
                       if (data.type === 'calendar-item' && onDropCalendarItem) {
-                        onDropCalendarItem(data.itemId, col.id);
+                        // In Area/Day view the columns are dynamic (id "area:..."), not real
+                        // storage columns — route the dropped item to its category column instead.
+                        const targetId = col.id.startsWith('area:')
+                          ? (data.item?.category === 'food' ? 'food-drink' : 'must-see')
+                          : col.id;
+                        onDropCalendarItem(data.itemId, targetId);
                       }
                     }
                   } catch (err) {
@@ -464,7 +543,14 @@ export default function PocketPanel({
                             </div>
                             <div className="min-w-0 flex-1 flex flex-col h-14">
                               <div className="min-w-0">
-                                <p className="text-xs font-bold text-on-surface leading-tight truncate">{item.title}</p>
+                                <p className="text-xs font-bold text-on-surface leading-tight truncate">
+                                  {hasFocus && isRelevant(item) && (
+                                    <span className="inline-flex items-center align-middle mr-1 px-1 py-0.5 rounded bg-primary/10 text-primary text-[8px] font-bold uppercase tracking-wide" title={`Relevant to ${focusedDayLabel || 'this day'}`}>
+                                      <MapPin className="w-2 h-2 mr-0.5" />Near
+                                    </span>
+                                  )}
+                                  {item.title}
+                                </p>
                                 <div className="text-[10px] text-slate-500 font-medium mt-0.5 flex items-center gap-1.5 leading-tight">
                                   {item.openingHours ? (
                                     <span className="flex items-center gap-1 text-on-surface-variant">
