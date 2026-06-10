@@ -18,6 +18,7 @@
  * places the still-unassigned candidates around them.
  */
 import { generateItinerary, type EngineItem, type Persona } from '../constraint-engine/planner.ts';
+import { optimizeItinerary, type OptimizeOptions } from '../constraint-engine/optimize.ts';
 import { haversineKm } from '../../shared/utils/geo';
 import { paceFor } from '../../shared/constants/pacing';
 
@@ -52,6 +53,9 @@ export interface GenerateOptions {
   interests?: string[]; // remembered/derived interests (AGENTS.md or parsed notes) → engine boost
   dayCount?: number;    // explicit override when dates are absent / flexible
   defaultDays?: number; // fallback when no dates/override (default: trip sized to the candidate pool)
+  /** Run the cost-function optimizer over the greedy seed (true = style-preset weights; or pass
+   *  weights/budgetCap, e.g. { budgetCap: 5000 } for a spend-capped trip). */
+  optimize?: boolean | OptimizeOptions;
 }
 
 const MS_DAY = 86_400_000;
@@ -153,7 +157,10 @@ export function generateFromBrief(brief: TripBrief, pool: EngineItem[], opts: Ge
   clusterAssignDays(planned.filter(it => !it.dayId), dayIds, perDay);
 
   // Tier-2: the engine fills each day (style passes straight through; persona + interests are dials).
-  const result = generateItinerary({ brief: { style: brief.style, persona, interests: opts.interests }, dayIds, pool: planned });
+  const plannerInput = { brief: { style: brief.style, persona, interests: opts.interests }, dayIds, pool: planned };
+  const result = opts.optimize
+    ? optimizeItinerary(plannerInput, opts.optimize === true ? {} : opts.optimize)
+    : generateItinerary(plannerInput);
 
   // Assemble ONE proposal: group the scheduled items into days (engine already time-orders them).
   const fixedStart = brief.flexibleDates ? undefined : brief.startDate;
