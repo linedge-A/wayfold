@@ -45,10 +45,10 @@ const IS_VALID_KEY = Boolean(API_KEY) &&
 
 // Simple Error Boundary to catch generic "Script error." and runtime failures
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
-  constructor(props: { children: ReactNode }) {
-    super(props);
-    this.state = { hasError: false };
-  }
+  // NOTE: @types/react is not installed, so the base Component generics don't surface `state`/`props`
+  // on the subclass — declare them explicitly. Root fix: add @types/react + @types/react-dom (devDeps).
+  state: { hasError: boolean } = { hasError: false };
+  declare readonly props: { children: ReactNode };
 
   static getDerivedStateFromError(_: Error) {
     return { hasError: true };
