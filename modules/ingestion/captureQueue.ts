@@ -24,11 +24,17 @@ export interface PendingCapture {
 const store = new Map<string, PendingCapture[]>();
 const uid = () => `cap-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+// Caps so an unauthenticated caller can't grow server memory without bound (memory-DoS guard).
+const MAX_PER_ACCOUNT = 200; // captures kept per account (drop-oldest beyond this)
+const MAX_ACCOUNTS = 5000;   // distinct account queues kept (evict-oldest beyond this)
+
 /** Add a capture to an account's inbox. Returns the stored record (with id + timestamp). */
 export function enqueue(account: string, capture: Omit<PendingCapture, 'id' | 'capturedAt'>): PendingCapture {
   const rec: PendingCapture = { id: uid(), capturedAt: Date.now(), ...capture };
   const list = store.get(account) ?? [];
   list.push(rec);
+  if (list.length > MAX_PER_ACCOUNT) list.splice(0, list.length - MAX_PER_ACCOUNT); // drop oldest
+  if (!store.has(account) && store.size >= MAX_ACCOUNTS) store.delete(store.keys().next().value as string); // evict oldest queue
   store.set(account, list);
   return rec;
 }

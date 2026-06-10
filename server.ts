@@ -10,11 +10,17 @@ import { GoogleGenAI } from '@google/genai';
 import { extractCandidates } from './modules/ingestion/extractCandidates';
 import { dispatchIngestion, toSuggestion } from './modules/ingestion/dispatchIngestion';
 import { enqueue, listPending, ack } from './modules/ingestion/captureQueue';
+import { securityHeaders, corsAllowlist, rateLimit, requireApiToken } from './server-security';
 
 dotenv.config();
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '256kb' }));          // bound request bodies (was unbounded default)
+app.use(securityHeaders);                           // nosniff / frame-deny / referrer / (prod) CSP
+app.use('/api', corsAllowlist);                     // cross-origin allowed only for CORS_ALLOWED_ORIGINS
+app.use('/api', rateLimit({ windowMs: 60_000, max: 90 }));   // general per-IP cap
+// AI proxy + state-changing ingest endpoints: tighter per-IP cap + optional shared-token gate
+app.use(['/api/copilot', '/api/ingest'], rateLimit({ windowMs: 60_000, max: 20 }), requireApiToken);
 
 const PORT = 3000;
 
