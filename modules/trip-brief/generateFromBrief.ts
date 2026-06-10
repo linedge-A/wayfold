@@ -17,7 +17,7 @@
  * Items that already carry a dayId (existing bookings / pins) are left where they are; Tier-1 only
  * places the still-unassigned candidates around them.
  */
-import { generateItinerary, type EngineItem, type Persona } from '../constraint-engine/planner.ts';
+import { generateItinerary, planTrip, type EngineItem, type Persona } from '../constraint-engine/planner.ts';
 import { optimizeItinerary, type OptimizeOptions } from '../constraint-engine/optimize.ts';
 import { haversineKm } from '../../shared/utils/geo';
 import { paceFor } from '../../shared/constants/pacing';
@@ -53,6 +53,7 @@ export interface GenerateOptions {
   interests?: string[]; // remembered/derived interests (AGENTS.md or parsed notes) → engine boost
   dayCount?: number;    // explicit override when dates are absent / flexible
   defaultDays?: number; // fallback when no dates/override (default: trip sized to the candidate pool)
+  roadTrip?: boolean;   // force (or disable) Tier-1 leg/night allocation; default auto (transport==='drive', ≥3 areas)
   /** Run the cost-function optimizer over the greedy seed (true = style-preset weights; or pass
    *  weights/budgetCap, e.g. { budgetCap: 5000 } for a spend-capped trip). */
   optimize?: boolean | OptimizeOptions;
@@ -154,13 +155,22 @@ export function generateFromBrief(brief: TripBrief, pool: EngineItem[], opts: Ge
   // Clone so we never mutate the caller's pool. Tier-1 day-assigns only the still-unassigned
   // candidates; anything already bound to a day (bookings/pins) keeps its place.
   const planned = pool.map(it => ({ ...it }));
-  clusterAssignDays(planned.filter(it => !it.dayId), dayIds, perDay);
 
-  // Tier-2: the engine fills each day (style passes straight through; persona + interests are dials).
+  // Road trip = a drive across several areas over several days. Route the legs + allocate nights
+  // (planTrip) so a thin pool spreads across the whole range instead of bunching with empty days.
+  const distinctAreas = new Set(planned.map(it => it.area).filter(Boolean)).size;
+  const useLegs = opts.roadTrip ?? (brief.transport === 'drive' && distinctAreas >= 3 && count >= 3);
   const plannerInput = { brief: { style: brief.style, persona, interests: opts.interests }, dayIds, pool: planned };
-  const result = opts.optimize
-    ? optimizeItinerary(plannerInput, opts.optimize === true ? {} : opts.optimize)
-    : generateItinerary(plannerInput);
+
+  let result;
+  if (useLegs) {
+    result = planTrip(plannerInput);                 // Tier-1 owns day assignment for road trips
+  } else {
+    clusterAssignDays(planned.filter(it => !it.dayId), dayIds, perDay);
+    result = opts.optimize
+      ? optimizeItinerary(plannerInput, opts.optimize === true ? {} : opts.optimize)
+      : generateItinerary(plannerInput);
+  }
 
   // Assemble ONE proposal: group the scheduled items into days (engine already time-orders them).
   const fixedStart = brief.flexibleDates ? undefined : brief.startDate;

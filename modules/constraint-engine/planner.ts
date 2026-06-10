@@ -277,7 +277,87 @@ export function generateItinerary(input: PlannerInput): PlannerResult {
   return { scheduled, overflow, flags, notes };
 }
 
-/** Tier-1 stub: order legs + allocate nights, then call generateItinerary per leg. */
-export function planTrip(): PlannerResult {
-  throw new Error('planTrip (multi-leg) not implemented — call generateItinerary per leg');
+// ─────────────────────────────────────────────────────────────────────────────
+// Tier-1: leg/night allocation for multi-city / road trips
+// ─────────────────────────────────────────────────────────────────────────────
+interface Leg { area: string; items: EngineItem[]; lat?: number; lng?: number; stops: number; lockedDayIdx: number[]; }
+
+const legCentroid = (items: EngineItem[]): { lat?: number; lng?: number } => {
+  const pts = items.filter(i => i.lat != null && i.lng != null);
+  if (!pts.length) return {};
+  return { lat: pts.reduce((s, p) => s + (p.lat as number), 0) / pts.length, lng: pts.reduce((s, p) => s + (p.lng as number), 0) / pts.length };
+};
+const dayIndex = (id?: string): number => { const m = /(\d+)/.exec(id || ''); return m ? parseInt(m[1], 10) - 1 : -1; };
+
+// Order legs along a route: start at the arrival leg (earliest locked day) or the highest-value
+// leg, then nearest-neighbour by centroid.
+const routeLegs = (legs: Leg[], interests?: string[]): Leg[] => {
+  let start = 0, bestLocked = Infinity;
+  legs.forEach((l, i) => { const e = l.lockedDayIdx.length ? Math.min(...l.lockedDayIdx) : Infinity; if (e < bestLocked) { bestLocked = e; start = i; } });
+  if (bestLocked === Infinity) { let bv = -Infinity; legs.forEach((l, i) => { const v = Math.max(...l.items.map(it => score(it, interests))); if (v > bv) { bv = v; start = i; } }); }
+  const order: Leg[] = [legs[start]]; const used = new Set([start]); let cur = start;
+  while (order.length < legs.length) {
+    let nxt = -1, nd = Infinity;
+    legs.forEach((l, i) => { if (used.has(i)) return; const d = haversineKm(legs[cur], l) ?? Number.MAX_SAFE_INTEGER; if (d < nd) { nd = d; nxt = i; } });
+    if (nxt < 0) break; order.push(legs[nxt]); used.add(nxt); cur = nxt;
+  }
+  return order;
+};
+
+// Allocate whole days per leg: ≥1 each, proportional to stop count, summing to N.
+const allocateDays = (legs: Leg[], N: number): number[] => {
+  const total = legs.reduce((s, l) => s + l.stops, 0) || 1;
+  const alloc = legs.map(l => Math.max(1, Math.round((N * l.stops) / total)));
+  const byDense = legs.map((_, i) => i).sort((a, b) => legs[b].stops / alloc[b] - legs[a].stops / alloc[a]);
+  let diff = N - alloc.reduce((a, b) => a + b, 0), g = 0;
+  while (diff > 0) { alloc[byDense[g % byDense.length]]++; diff--; g++; }
+  for (let k = byDense.length - 1; diff < 0 && g < 10000; k--, g++) { const idx = byDense[((k % byDense.length) + byDense.length) % byDense.length]; if (alloc[idx] > 1) { alloc[idx]--; diff++; } }
+  return alloc;
+};
+
+/**
+ * Tier-1 — order legs (cities) along a route, allocate nights ∝ stops, and fill each leg with
+ * generateItinerary. Spreads a thin pool across the whole date range so multi-day road trips don't
+ * leave empty days. A single-area (city) trip falls straight through to generateItinerary.
+ */
+export function planTrip(input: PlannerInput): PlannerResult {
+  const days = input.dayIds, N = days.length;
+  if (N === 0) return { scheduled: [], overflow: [...input.pool], flags: ['⚠ no days provided'], notes: [] };
+  const interests = input.brief.interests;
+  const pool = input.pool.map(it => ({ ...it }));               // clone — we stamp dayId
+
+  const byArea = new Map<string, EngineItem[]>();
+  for (const it of pool) { const k = it.area || '—'; (byArea.get(k) ?? byArea.set(k, []).get(k)!).push(it); }
+  let legs: Leg[] = [...byArea.entries()].map(([area, items]) => {
+    const c = legCentroid(items);
+    return { area, items, lat: c.lat, lng: c.lng, stops: Math.max(1, items.filter(i => classOf(i) !== 'corridor').length), lockedDayIdx: [...new Set(items.map(i => dayIndex(i.dayId)).filter(x => x >= 0))] };
+  });
+  if (legs.length <= 1) return generateItinerary(input);        // city trip — not multi-leg
+
+  const flags: string[] = [], overflow: EngineItem[] = [];
+  if (legs.length > N) {                                        // more cities than days
+    legs.sort((a, b) => b.stops - a.stops);
+    const dropped = legs.slice(N); legs = legs.slice(0, N);
+    overflow.push(...dropped.flatMap(l => l.items));
+    flags.push(`⚠ ${legs.length + dropped.length} areas over ${N} days — deferred ${dropped.map(l => l.area).join(', ')} to the pocket`);
+  }
+
+  const ordered = routeLegs(legs, interests);
+  const alloc = allocateDays(ordered, N);
+  const scheduled: EngineItem[] = [], notes: string[] = [`route: ${ordered.map((l, i) => `${l.area}×${alloc[i]}n`).join(' → ')}`];
+  let cur = 0;
+  for (let i = 0; i < ordered.length; i++) {
+    const leg = ordered[i], legDays = days.slice(cur, cur + alloc[i]); cur += alloc[i];
+    // keep a locked item on its day if it falls in this leg; spread the rest round-robin by value.
+    const flex = leg.items.filter(it => !(it.dayId && legDays.includes(it.dayId) && lockednessOf(it) === 'locked')).sort((a, b) => score(b, interests) - score(a, interests));
+    flex.forEach((it, idx) => { it.dayId = legDays[idx % legDays.length]; });
+    for (const it of leg.items) if (lockednessOf(it) === 'locked' && it.dayId && !legDays.includes(it.dayId)) flags.push(`⚠ "${it.title}" booked on ${it.dayId}, outside its ${leg.area} leg (${legDays[0]}–${legDays[legDays.length - 1]})`);
+    const r = generateItinerary({ brief: input.brief, dayIds: legDays, pool: leg.items });
+    scheduled.push(...r.scheduled); overflow.push(...r.overflow); flags.push(...r.flags);
+    notes.push(`  leg ${i + 1}: ${alloc[i]} night${alloc[i] > 1 ? 's' : ''} in ${leg.area} (${legDays[0]}${alloc[i] > 1 ? `–${legDays[legDays.length - 1]}` : ''})`);
+  }
+  const filled = new Set(scheduled.map(s => s.dayId));
+  for (const d of days) if (!filled.has(d)) flags.push(`⚠ ${d} has no stops — thin pool for that leg`);
+  notes.push(`planTrip: ${ordered.length} legs / ${N} days · scheduled ${scheduled.length} · overflow ${overflow.length}`);
+  return { scheduled, overflow, flags, notes };
 }
