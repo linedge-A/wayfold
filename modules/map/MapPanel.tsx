@@ -105,6 +105,19 @@ function PolylineOverlay({ points }: { points: google.maps.LatLngLiteral[] }) {
   return null;
 }
 
+// Gently recenter the map on the item selected elsewhere (calendar / pocket),
+// so cross-pane selection stays visually connected without changing zoom.
+function SelectionPanner({ target }: { target: google.maps.LatLngLiteral | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map || !target) return;
+    map.panTo(target);
+  }, [map, target?.lat, target?.lng]);
+
+  return null;
+}
+
 export default function MapPanel({ items, selectedItemId, onSelectItem, pocketItems }: MapPanelProps) {
   // Filter active day itinerary items (filter out lodging/airport transit from primary route connections if desired, or keep classic ones)
   const mapItems = items
@@ -115,8 +128,12 @@ export default function MapPanel({ items, selectedItemId, onSelectItem, pocketIt
       indexOrder: index + 1
     }));
 
-  const activePocketItems = (pocketItems || [])
-    .filter(item => selectedItemId === item.id)
+  // Show ALL saved pocket spots as faint "candidate" markers so the Research
+  // Pocket is spatially integrated with the day's route. Skip any already
+  // scheduled into today's route to avoid duplicate pins.
+  const routeIds = new Set(mapItems.map(i => i.id));
+  const candidateItems = (pocketItems || [])
+    .filter(item => !routeIds.has(item.id))
     .map((item, index) => ({
       ...item,
       latLng: getLatLng(item, index + 20)
@@ -124,12 +141,15 @@ export default function MapPanel({ items, selectedItemId, onSelectItem, pocketIt
 
   // Find selected item representation to display modal/dialog details InfoWindow
   const selectedItem = (
-    mapItems.find(item => item.id === selectedItemId) || 
-    activePocketItems.find(item => item.id === selectedItemId)
+    mapItems.find(item => item.id === selectedItemId) ||
+    candidateItems.find(item => item.id === selectedItemId)
   ) as any;
 
-  // Collect all currently outputted coordinate locations to feed bounds fitter
-  const allPoints = [...mapItems.map(i => i.latLng), ...activePocketItems.map(i => i.latLng)];
+  // Fit bounds to the day's route so it stays framed; if today has no mapped
+  // stops, frame the saved candidates instead so the pocket keeps context.
+  const allPoints = mapItems.length > 0
+    ? mapItems.map(i => i.latLng)
+    : candidateItems.map(i => i.latLng);
 
   // If the user has not pasted their active key, present a beautiful layout guide
   if (!hasValidKey) {
@@ -189,6 +209,9 @@ export default function MapPanel({ items, selectedItemId, onSelectItem, pocketIt
           {/* Auto center and scale fitting */}
           <MapBoundsFitter points={allPoints} />
 
+          {/* Pan to whatever is selected in the calendar / pocket */}
+          <SelectionPanner target={selectedItem?.latLng ?? null} />
+
           {/* Chronological lines between stops removed on user request */}
 
           {/* Active itinerary points on the map */}
@@ -228,8 +251,8 @@ export default function MapPanel({ items, selectedItemId, onSelectItem, pocketIt
             );
           })}
 
-          {/* Active selected pocket item marker overlay */}
-          {activePocketItems.map((item) => {
+          {/* Saved pocket candidates — faint until selected, for spatial context */}
+          {candidateItems.map((item) => {
             const isSelected = selectedItemId === item.id;
             const isFood = item.category === 'food' || item.id.includes('food') || item.id.includes('market') || item.id.includes('kurasu');
             const Icon = isFood ? Coffee : Compass;
@@ -239,19 +262,21 @@ export default function MapPanel({ items, selectedItemId, onSelectItem, pocketIt
                 key={item.id}
                 position={item.latLng}
                 onClick={() => onSelectItem?.(isSelected ? undefined : item.id)}
+                zIndex={isSelected ? 50 : 1}
+                title={`Saved: ${item.title}`}
               >
-                <div className="relative" style={{ width: '36px', height: '36px' }}>
+                <div className="relative" style={{ width: '32px', height: '32px' }}>
                   {isSelected && (
-                    <div className={`absolute inset-0 w-9 h-9 rounded-full animate-ping -translate-x-[2px] -translate-y-[2px] ${isFood ? 'bg-orange-500/20' : 'bg-blue-500/20'}`} />
+                    <div className={`absolute inset-0 w-8 h-8 rounded-full animate-ping ${isFood ? 'bg-orange-500/20' : 'bg-blue-500/20'}`} />
                   )}
                   <div
-                    className={`w-9 h-9 rounded-full flex items-center justify-center border-2 shadow-lg transition-all duration-150 ${
+                    className={`rounded-full flex items-center justify-center shadow-md transition-all duration-150 ${
                       isSelected
-                        ? isFood ? 'bg-orange-500 text-white border-white scale-110' : 'bg-blue-600 text-white border-white scale-110'
-                        : isFood ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-blue-50 text-blue-600 border-blue-200'
+                        ? `w-8 h-8 border-2 scale-110 ${isFood ? 'bg-orange-500 text-white border-white' : 'bg-blue-600 text-white border-white'}`
+                        : `w-6 h-6 border border-dashed bg-white/90 hover:scale-110 hover:bg-white ${isFood ? 'text-orange-500 border-orange-300' : 'text-slate-400 border-slate-300'}`
                     }`}
                   >
-                    <Icon className="w-4 h-4" />
+                    <Icon className={isSelected ? 'w-4 h-4' : 'w-3 h-3'} />
                   </div>
                 </div>
               </AdvancedMarker>
@@ -288,7 +313,7 @@ export default function MapPanel({ items, selectedItemId, onSelectItem, pocketIt
           )}
         </Map>
 
-        {mapItems.length === 0 && activePocketItems.length === 0 && (
+        {mapItems.length === 0 && candidateItems.length === 0 && (
           <div className="absolute inset-x-0 bottom-4 mx-auto max-w-[220px] bg-white border border-border-subtle rounded-full text-center py-1.5 px-3 shadow-md text-xs text-slate-500 font-medium pointer-events-none z-10">
             Leisure day – map centered on Kyoto
           </div>
