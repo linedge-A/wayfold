@@ -157,7 +157,7 @@ function AppContent() {
   const [isCopilotLoading, setIsCopilotLoading] = useState<boolean>(false);
   // Staged copilot itinerary/pocket edits keyed by AI message id — reviewed + confirmed via the
   // CopilotPanel tiered "Apply" card (#27) instead of auto-applying.
-  const [pendingChanges, setPendingChanges] = useState<Record<string, { updatedItems?: ItineraryItem[]; updatedPocket?: any[]; deltas?: RevisionDelta[] }>>({});
+  const [pendingChanges, setPendingChanges] = useState<Record<string, { base?: ItineraryItem[]; updatedItems?: ItineraryItem[]; updatedPocket?: any[]; deltas?: RevisionDelta[] }>>({});
 
   // Optimization Modal state hooks
   const [optimizingItem, setOptimizingItem] = useState<PlaceItem | null>(null);
@@ -842,7 +842,7 @@ function AppContent() {
         if (payload.updatedItems || payload.updatedPocket || (payload.deltas && payload.deltas.length)) {
           setPendingChanges(prev => ({
             ...prev,
-            [freshAIMsg.id]: { updatedItems: payload.updatedItems, updatedPocket: payload.updatedPocket, deltas: payload.deltas },
+            [freshAIMsg.id]: { base: appState.itineraryItems, updatedItems: payload.updatedItems, updatedPocket: payload.updatedPocket, deltas: payload.deltas },
           }));
         }
       } else {
@@ -879,12 +879,30 @@ function AppContent() {
 
   // Apply a STAGED copilot change set (#27 tiered apply): commit the proposed items/pocket/deltas,
   // then clear it so the card collapses. (Applies the snapshot captured when the reply arrived.)
+  // 3-way merge a staged copilot proposal onto the LIVE board so applying a stale card never clobbers
+  // edits made after the reply. `base` = board the copilot diffed from; only the items it actually
+  // changed/added/removed are applied — anything the user touched in between is preserved.
+  const mergeProposedItinerary = (base: ItineraryItem[] | undefined, proposed: ItineraryItem[], current: ItineraryItem[]): ItineraryItem[] => {
+    if (!base) return proposed; // no base captured (legacy entry) → fall back to wholesale replace
+    const mapOf = (arr: ItineraryItem[]) => new Map(arr.filter(x => x.id).map(x => [x.id as string, x]));
+    const baseMap = mapOf(base), propMap = mapOf(proposed);
+    const removed = new Set([...baseMap.keys()].filter(k => !propMap.has(k)));   // copilot dropped these
+    const result = current.filter(it => !it.id || !removed.has(it.id));         // live board minus removals
+    for (const [k, p] of propMap) {
+      const b = baseMap.get(k);
+      if (b && JSON.stringify(b) === JSON.stringify(p)) continue;               // copilot didn't touch it → keep live version
+      const idx = result.findIndex(it => it.id === k);
+      if (idx >= 0) result[idx] = p; else result.push(p);                       // apply copilot's edit / add
+    }
+    return result;
+  };
+
   const handleApplyChange = (msgId: string) => {
     const pc = pendingChanges[msgId];
     if (!pc) return;
     setAppState(prev => {
       const next: AppState = { ...prev };
-      if (pc.updatedItems) next.itineraryItems = pc.updatedItems as ItineraryItem[];
+      if (pc.updatedItems) next.itineraryItems = mergeProposedItinerary(pc.base, pc.updatedItems as ItineraryItem[], prev.itineraryItems);
       if (pc.updatedPocket) next.pocket = pc.updatedPocket as any;
       if (pc.deltas && pc.deltas.length) next.revisionDeltas = [...pc.deltas, ...prev.revisionDeltas];
       return next;
