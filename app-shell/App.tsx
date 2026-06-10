@@ -22,6 +22,7 @@ import ExplorePage from './ExplorePage';
 import ShareModal from './ShareModal';
 import { AppState, CopilotMessage, PlaceItem, ItineraryItem, RevisionDelta } from '@/shared/types/index';
 import { INITIAL_TRIP_BRIEF, INITIAL_DAYS, INITIAL_ITINERARY_ITEMS, INITIAL_POCKET, INITIAL_BOOKINGS, INITIAL_REVISION_DELTAS, INITIAL_MESSAGES } from '@/shared/mock-data/seedData';
+import { loadJSON, saveJSON, pocketKey } from '@/shared/utils/persistence';
 import { getLocalCopilotResponse } from '@/modules/copilot/localResponses';
 
 // Safely resolve the Google Maps API Key from multiple potential environment sources
@@ -94,13 +95,21 @@ function AppContent() {
     tripBrief: INITIAL_TRIP_BRIEF,
     itineraryDays: INITIAL_DAYS,
     itineraryItems: INITIAL_ITINERARY_ITEMS,
-    pocket: INITIAL_POCKET,
+    // Hydrate the Research Pocket from localStorage (per trip) so saved POIs cumulate
+    // across sessions; fall back to the seed pocket on first run / unavailable storage.
+    pocket: loadJSON(pocketKey(INITIAL_TRIP_BRIEF.id), INITIAL_POCKET),
     bookings: INITIAL_BOOKINGS,
     selectedDayId: 'day-3', // Default to Wednesday 14th to match premium screenshot
     selectedItemId: undefined,
     revisionDeltas: INITIAL_REVISION_DELTAS,
     currentView: 'plan'
   });
+
+  // Persist the Research Pocket per trip so saved POIs survive reloads and stay scoped to
+  // their trip. (Hydration happens in the initial state above.)
+  useEffect(() => {
+    saveJSON(pocketKey(appState.tripBrief.id), appState.pocket);
+  }, [appState.pocket, appState.tripBrief.id]);
 
   const [viewType, setViewType] = useState<'day' | 'week' | 'month'>('day');
   const [focusMode, setFocusMode] = useState<boolean>(false);
