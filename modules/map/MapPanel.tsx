@@ -105,6 +105,19 @@ function PolylineOverlay({ points }: { points: google.maps.LatLngLiteral[] }) {
   return null;
 }
 
+// Gently recenter the map on the item selected elsewhere (calendar / pocket),
+// so cross-pane selection stays visually connected without changing zoom.
+function SelectionPanner({ target }: { target: google.maps.LatLngLiteral | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map || !target) return;
+    map.panTo(target);
+  }, [map, target?.lat, target?.lng]);
+
+  return null;
+}
+
 export default function MapPanel({ items, selectedItemId, onSelectItem, pocketItems }: MapPanelProps) {
   // Filter active day itinerary items (filter out lodging/airport transit from primary route connections if desired, or keep classic ones)
   const mapItems = items
@@ -195,6 +208,9 @@ export default function MapPanel({ items, selectedItemId, onSelectItem, pocketIt
         >
           {/* Auto center and scale fitting */}
           <MapBoundsFitter points={allPoints} />
+
+          {/* Pan to whatever is selected in the calendar / pocket */}
+          <SelectionPanner target={selectedItem?.latLng ?? null} />
 
           {/* Chronological lines between stops removed on user request */}
 
