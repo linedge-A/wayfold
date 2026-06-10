@@ -3,10 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { APIProvider, Map, AdvancedMarker, InfoWindow, useMap } from '@vis.gl/react-google-maps';
 import { Coffee, Compass, MapPin } from 'lucide-react';
 import { ItineraryItem, PlaceItem } from '@/shared/types/index';
+import { zoomCluster, type ClusterPoint, type ZoomClusterResult, type LatLngBounds as ZCBounds } from './zoomCluster';
+
+// Zoom thresholds for the level-of-detail aggregation (see ./zoomCluster):
+// < CITY_ZOOM → shaded country clusters · < PIN_ZOOM → city dots (# of POI) · >= PIN_ZOOM → in-city scatter.
+const CITY_ZOOM = 5;
+const PIN_ZOOM = 11;
 
 interface MapPanelProps {
   items: ItineraryItem[];
@@ -120,6 +126,66 @@ function SelectionPanner({ target }: { target: google.maps.LatLngLiteral | null 
   return null;
 }
 
+// Report the live zoom + viewport bounds on every map idle, so the panel can pick the
+// level-of-detail tier. (Provider glue around the pure ./zoomCluster logic.)
+function ZoomTracker({ onChange }: { onChange: (zoom: number, bounds: ZCBounds | null) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map) return;
+    const emit = () => {
+      const lb = map.getBounds();
+      let bounds: ZCBounds | null = null;
+      if (lb) {
+        const ne = lb.getNorthEast();
+        const sw = lb.getSouthWest();
+        bounds = { north: ne.lat(), south: sw.lat(), east: ne.lng(), west: sw.lng() };
+      }
+      onChange(map.getZoom() ?? 0, bounds);
+    };
+    emit();
+    const listener = map.addListener('idle', emit);
+    return () => listener.remove();
+  }, [map, onChange]);
+  return null;
+}
+
+// Aggregated tiers: translucent "shaded region" circles (country/city) + a count bubble
+// per cluster showing the # of POI. Clicking a region drills into the in-city scatter.
+function AggregationLayer({ result }: { result: ZoomClusterResult<ClusterPoint> }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map || result.tier === 'pins') return;
+    const radiusM = result.tier === 'country' ? 220000 : 16000; // continental vs city-sized shading
+    const circles = result.clusters.map(c => new google.maps.Circle({
+      map, center: c.centroid, radius: radiusM,
+      fillColor: '#2F80ED', fillOpacity: 0.12,
+      strokeColor: '#2F80ED', strokeOpacity: 0.35, strokeWeight: 1, clickable: false,
+    }));
+    return () => circles.forEach(c => c.setMap(null));
+  }, [map, result]);
+
+  if (result.tier === 'pins') return null;
+  return (
+    <>
+      {result.clusters.map(c => (
+        <AdvancedMarker
+          key={c.key}
+          position={c.centroid}
+          onClick={() => { map?.panTo(c.centroid); map?.setZoom(PIN_ZOOM); }}
+        >
+          <div
+            className="flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full bg-primary text-white shadow-lg border-2 border-white cursor-pointer hover:scale-105 transition-transform"
+            title={`${c.count} saved in ${c.label} — click to zoom in`}
+          >
+            <span className="w-6 h-6 rounded-full bg-white/25 flex items-center justify-center text-xs font-bold">{c.count}</span>
+            <span className="text-[11px] font-bold whitespace-nowrap max-w-[130px] truncate">{c.label}</span>
+          </div>
+        </AdvancedMarker>
+      ))}
+    </>
+  );
+}
+
 export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelectItem, onHoverItem, pocketItems }: MapPanelProps) {
   // Filter active day itinerary items (filter out lodging/airport transit from primary route connections if desired, or keep classic ones)
   // Memoized so the derived arrays keep a stable identity when `items` is unchanged —
@@ -156,6 +222,20 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
   const allPoints = useMemo(() => mapItems.length > 0
     ? mapItems.map(i => i.latLng)
     : candidateItems.map(i => i.latLng), [mapItems, candidateItems]);
+
+  // Level-of-detail: aggregate all shown points into shaded regions / city dots when zoomed
+  // out, scatter individual pins when zoomed in. Tier is driven by the live map zoom + bounds.
+  const [view, setView] = useState<{ zoom: number; bounds: ZCBounds | null }>({ zoom: 13, bounds: null });
+  const handleView = useCallback((zoom: number, bounds: ZCBounds | null) => setView({ zoom, bounds }), []);
+  const clusterPoints = useMemo<ClusterPoint[]>(
+    () => [...mapItems, ...candidateItems].map(m => ({ id: m.id, lat: m.latLng.lat, lng: m.latLng.lng, label: (m as any).area })),
+    [mapItems, candidateItems],
+  );
+  const cluster = useMemo(
+    () => zoomCluster(clusterPoints, view.zoom, view.bounds, { cityZoom: CITY_ZOOM, pinZoom: PIN_ZOOM }),
+    [clusterPoints, view],
+  );
+  const isPins = cluster.tier === 'pins';
 
   // If the user has not pasted their active key, present a beautiful layout guide
   if (!hasValidKey) {
@@ -218,10 +298,14 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
           {/* Pan to whatever is selected in the calendar / pocket */}
           <SelectionPanner target={selectedItem?.latLng ?? null} />
 
+          {/* Level-of-detail: track zoom/bounds, and draw shaded regions + count dots when zoomed out */}
+          <ZoomTracker onChange={handleView} />
+          <AggregationLayer result={cluster} />
+
           {/* Chronological lines between stops removed on user request */}
 
-          {/* Active itinerary points on the map */}
-          {mapItems.map((item) => {
+          {/* Active itinerary points on the map (in-city scatter only; aggregated tiers use AggregationLayer) */}
+          {isPins && mapItems.map((item) => {
             const isSelected = selectedItemId === item.id;
             const isHovered = hoveredItemId === item.id;
             const categoryColor = item.category === 'food' ? '#F2994A' :
@@ -263,8 +347,8 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
             );
           })}
 
-          {/* Saved pocket candidates — faint until selected, for spatial context */}
-          {candidateItems.map((item) => {
+          {/* Saved pocket candidates — faint until selected, for spatial context (scatter only) */}
+          {isPins && candidateItems.map((item) => {
             const isSelected = selectedItemId === item.id;
             const isFood = item.category === 'food' || item.id.includes('food') || item.id.includes('market') || item.id.includes('kurasu');
             const Icon = isFood ? Coffee : Compass;
