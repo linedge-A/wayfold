@@ -21,6 +21,8 @@ interface MapPanelProps {
   onSelectItem?: (id: string | undefined) => void;
   onHoverItem?: (id: string | undefined) => void;
   pocketItems?: PlaceItem[];
+  /** Reports the live map zoom so a sibling list can adapt its area grouping to the same scale. */
+  onZoomChange?: (zoom: number) => void;
 }
 
 // Safely resolve the Google Maps API Key from the Vite define setup
@@ -186,7 +188,7 @@ function AggregationLayer({ result }: { result: ZoomClusterResult<ClusterPoint> 
   );
 }
 
-export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelectItem, onHoverItem, pocketItems }: MapPanelProps) {
+export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelectItem, onHoverItem, pocketItems, onZoomChange }: MapPanelProps) {
   // Filter active day itinerary items (filter out lodging/airport transit from primary route connections if desired, or keep classic ones)
   // Memoized so the derived arrays keep a stable identity when `items` is unchanged —
   // otherwise a fresh array every render re-fires the bounds/polyline effects below.
@@ -227,6 +229,7 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
   // out, scatter individual pins when zoomed in. Tier is driven by the live map zoom + bounds.
   const [view, setView] = useState<{ zoom: number; bounds: ZCBounds | null }>({ zoom: 13, bounds: null });
   const handleView = useCallback((zoom: number, bounds: ZCBounds | null) => setView({ zoom, bounds }), []);
+  useEffect(() => { onZoomChange?.(view.zoom); }, [view.zoom, onZoomChange]);
   const clusterPoints = useMemo<ClusterPoint[]>(
     () => [...mapItems, ...candidateItems].map(m => ({ id: m.id, lat: m.latLng.lat, lng: m.latLng.lng, label: (m as any).area })),
     [mapItems, candidateItems],

@@ -4,12 +4,38 @@
  */
 
 import { useState, useMemo } from 'react';
-import { Plus, Compass, Coffee, ListChecks, PlusCircle, Filter, Search, X, MapPin, Star, Clock, Tag } from 'lucide-react';
+import { Plus, Compass, Coffee, ListChecks, PlusCircle, Filter, Search, X, MapPin, Star, Clock, Tag, ChevronDown, Check, ArrowUpDown, Layers } from 'lucide-react';
 import { PocketColumn, PlaceItem } from '@/shared/types/index';
 import GooglePlaceDetailsCard from '@/shared/utils/GooglePlaceDetailsCard';
+// 5-intent display taxonomy (See/Eat/Do/Stay/Transit) + status tags (Booked/Backup) —
+// consolidation per OTA practice, stress-tested before adoption; legacy contract untouched.
+import { displayCategory, statusTags, DISPLAY_CAT_LABEL } from './taxonomy';
 // Reuse the shared geo primitive rather than reinventing distance (now promoted to shared/utils
 // per #12, so this is no longer a cross-module import into the constraint engine).
 import { haversineKm } from '@/shared/utils/geo';
+
+// Two-sided range bar (min + max thumbs over one track) — used for the Budget and Rating filters.
+function RangeBar({ min, max, step, lo, hi, onChange }: {
+  min: number; max: number; step: number; lo: number; hi: number; onChange: (v: [number, number]) => void;
+}) {
+  const pct = (v: number) => ((v - min) / (max - min || 1)) * 100;
+  return (
+    <div className="relative h-4 flex items-center">
+      <style>{`
+        .pp-range{position:absolute;left:0;right:0;width:100%;height:100%;margin:0;background:transparent;pointer-events:none;-webkit-appearance:none;appearance:none;}
+        .pp-range:focus{outline:none;}
+        .pp-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;pointer-events:auto;height:14px;width:14px;border-radius:9999px;background:#005ab6;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3);cursor:pointer;}
+        .pp-range::-moz-range-thumb{pointer-events:auto;height:14px;width:14px;border-radius:9999px;background:#005ab6;border:2px solid #fff;cursor:pointer;}
+      `}</style>
+      <div className="absolute left-0 right-0 h-1 rounded-full bg-slate-200" />
+      <div className="absolute h-1 rounded-full bg-primary" style={{ left: `${pct(lo)}%`, right: `${100 - pct(hi)}%` }} />
+      <input type="range" className="pp-range" min={min} max={max} step={step} value={lo}
+        onChange={e => onChange([Math.min(Number(e.target.value), hi), hi])} />
+      <input type="range" className="pp-range" min={min} max={max} step={step} value={hi}
+        onChange={e => onChange([lo, Math.max(Number(e.target.value), lo)])} />
+    </div>
+  );
+}
 
 
 interface PocketPanelProps {
@@ -27,6 +53,8 @@ interface PocketPanelProps {
   focusedDayArea?: string;
   /** Label of the focused day (e.g. "Wed 14") for the relevance chip. */
   focusedDayLabel?: string;
+  /** Live map zoom — drives the adaptive granularity of "Group by Area". */
+  mapZoom?: number;
 }
 
 export default function PocketPanel({ 
@@ -40,14 +68,30 @@ export default function PocketPanel({
   onDropCalendarItem,
   focusedDayItems,
   focusedDayArea,
-  focusedDayLabel
+  focusedDayLabel,
+  mapZoom
 }: PocketPanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState<'all' | 'must-see' | 'food-drink'>('all');
-  const [sortBy, setSortBy] = useState<'name' | 'category' | 'rating'>('name');
-  const [groupBy, setGroupBy] = useState<'category' | 'area'>('category');
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]); // empty = all
+  const [selectedSubs, setSelectedSubs] = useState<string[]>([]);             // empty = all
+  const [regionQuery, setRegionQuery] = useState('');                          // free-text area/region filter
+  const [sortBy, setSortBy] = useState<'name' | 'rating' | 'category' | 'area'>('name');
+  const [groupBy, setGroupBy] = useState<'none' | 'category' | 'area'>('category');
+  const [openMenu, setOpenMenu] = useState<'sort' | 'filter' | null>(null);
   const [onlyRelevant, setOnlyRelevant] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
+  const [expandedCats, setExpandedCats] = useState<string[]>([]); // which categories show their sub-cats
+  const RATING_MAX = 5;
+  const BUDGET_MAX = 3; // 0=free, then symbol count (¥/¥¥/¥¥¥ · $$/$$$)
+  const [ratingRange, setRatingRange] = useState<[number, number]>([0, RATING_MAX]);
+  const [budgetRange, setBudgetRange] = useState<[number, number]>([0, BUDGET_MAX]);
+  const budgetRank = (b?: string) => (!b || /free/i.test(b)) ? 0 : Math.min(BUDGET_MAX, (b.match(/[¥$]/g) || []).length);
+  const BUDGET_LABEL = ['Free', '$', '$$', '$$$'];
+
+  const SORT_LABEL: Record<string, string> = { name: 'Name', rating: 'Rating', category: 'Category', area: 'Area' };
+  const GROUP_LABEL: Record<string, string> = { none: 'None', category: 'Category', area: 'Area' };
+  const catLabel = (c: string) => (DISPLAY_CAT_LABEL as Record<string, string>)[c] || c.charAt(0).toUpperCase() + c.slice(1);
+  const toggle = (arr: string[], v: string, set: (x: string[]) => void) =>
+    set(arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]);
 
   // Relevance to the focused day. Geo proximity is a POSITIVE signal (a near hit), OR'd with
   // area/word overlap — never used to NEGATE. So whole-degree normalized/placeholder coords
@@ -163,191 +207,264 @@ export default function PocketPanel({
     setManualForm({ title: '', category: 'sight', area: '', subCategory: '', budget: '', openingHours: '' });
   };
 
-  const allItems = useMemo(() => {
-    const list = pocket.flatMap(col => col.items);
-    
-    // Apply category filter
-    let filtered = activeCategory === 'all' 
-      ? list 
-      : list.filter(item => {
-          if (activeCategory === 'food-drink') return item.category === 'food';
-          if (activeCategory === 'must-see') return item.category === 'sight';
-          return true;
-        });
+  // Adaptive facets — categories present in the data (with counts) and the sub-categories
+  // available WITHIN the currently selected categories, so the sub filter stays specific.
+  const facets = useMemo(() => {
+    const all = pocket.flatMap(c => c.items);
+    const cats = new Map<string, number>();
+    const subsByCat = new Map<string, Map<string, number>>();
+    for (const it of all) {
+      const dc = displayCategory(it); // 5-intent display category, not the legacy union
+      cats.set(dc, (cats.get(dc) || 0) + 1);
+      if (it.subCategory) {
+        const m = subsByCat.get(dc) ?? subsByCat.set(dc, new Map()).get(dc)!;
+        m.set(it.subCategory, (m.get(it.subCategory) || 0) + 1);
+      }
+    }
+    const sortMap = <K,>(m: Map<K, number>) => [...m.entries()].sort((a, b) => b[1] - a[1]);
+    return { total: all.length, cats: sortMap(cats), subsByCat };
+  }, [pocket]);
+  const budgetActive = budgetRange[0] > 0 || budgetRange[1] < BUDGET_MAX;
+  const ratingActive = ratingRange[0] > 0 || ratingRange[1] < RATING_MAX;
+  const activeFilters = selectedCategories.length + selectedSubs.length + (budgetActive ? 1 : 0) + (ratingActive ? 1 : 0) + (regionQuery.trim() ? 1 : 0);
 
-    // Apply search query
+  const allItems = useMemo(() => {
+    let filtered = pocket.flatMap(col => col.items);
+    if (selectedCategories.length) filtered = filtered.filter(it => selectedCategories.includes(displayCategory(it)));
+    if (selectedSubs.length) filtered = filtered.filter(it => it.subCategory != null && selectedSubs.includes(it.subCategory));
+    if (ratingActive) filtered = filtered.filter(it => { const r = it.rating ?? 0; return r >= ratingRange[0] && r <= ratingRange[1]; });
+    if (budgetActive) filtered = filtered.filter(it => { const b = budgetRank(it.budget); return b >= budgetRange[0] && b <= budgetRange[1]; });
+    if (regionQuery.trim()) {
+      const rq = regionQuery.toLowerCase().trim();
+      filtered = filtered.filter(it => (it.area || '').toLowerCase().includes(rq) || (it.group || '').toLowerCase().includes(rq));
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      filtered = filtered.filter(item =>
-        item.title.toLowerCase().includes(q) ||
-        item.area.toLowerCase().includes(q) ||
-        (item.subCategory && item.subCategory.toLowerCase().includes(q))
-      );
+      filtered = filtered.filter(it =>
+        it.title.toLowerCase().includes(q) ||
+        (it.area || '').toLowerCase().includes(q) ||
+        (it.subCategory || '').toLowerCase().includes(q));
     }
+    if (onlyRelevant && hasFocus) filtered = filtered.filter(isRelevant);
 
-    // Narrow to spots relevant to the focused day, when that lens is on
-    if (onlyRelevant && hasFocus) {
-      filtered = filtered.filter(isRelevant);
-    }
-
-    // Apply sorting — relevant-to-the-focused-day spots float to the top
     return [...filtered].sort((a, b) => {
       if (hasFocus && !onlyRelevant) {
-        const ra = isRelevant(a) ? 0 : 1;
-        const rb = isRelevant(b) ? 0 : 1;
+        const ra = isRelevant(a) ? 0 : 1, rb = isRelevant(b) ? 0 : 1;
         if (ra !== rb) return ra - rb;
       }
-      if (sortBy === 'name') return a.title.localeCompare(b.title);
-      if (sortBy === 'category') return a.category.localeCompare(b.category);
       if (sortBy === 'rating') return (b.rating || 0) - (a.rating || 0);
-      return 0;
+      if (sortBy === 'category') return displayCategory(a).localeCompare(displayCategory(b)) || a.title.localeCompare(b.title);
+      if (sortBy === 'area') return (a.area || '').localeCompare(b.area || '') || a.title.localeCompare(b.title);
+      return a.title.localeCompare(b.title);
     });
-  }, [pocket, activeCategory, searchQuery, sortBy, onlyRelevant, hasFocus, focusedDayArea, focusedDayItems]);
+  }, [pocket, selectedCategories, selectedSubs, regionQuery, ratingRange, budgetRange, searchQuery, sortBy, onlyRelevant, hasFocus, focusedDayArea, focusedDayItems]);
 
+  // "Group by Area" follows the map's zoom: a coarse grid (region) when zoomed out collapses to a
+  // fine grid (district/block) when zoomed in — so the list and map sit at the same geographic
+  // scale. Items without real coordinates fall back to their area string.
+  const cellForZoom = (z: number) => z < 4 ? 12 : z < 6 ? 3 : z < 8 ? 1 : z < 10 ? 0.3 : z < 12 ? 0.08 : 0.02;
+  const areaTier = (z?: number) => z == null ? 'Area' : z < 4 ? 'Region' : z < 6 ? 'State / Province' : z < 8 ? 'Province' : z < 10 ? 'City' : z < 12 ? 'District' : 'Block';
+  const dominantArea = (items: PlaceItem[]) => {
+    const f = new Map<string, number>();
+    for (const it of items) { const a = (it.group || it.area || '').trim(); if (a) f.set(a, (f.get(a) || 0) + 1); }
+    let best = 'Unsorted', n = 0;
+    for (const [k, v] of f) if (v > n) { best = k; n = v; }
+    return best;
+  };
+
+  // Vertical sections, grouped by the chosen dimension (or one flat list). Scales to hundreds.
   const displayColumns = useMemo(() => {
-    // Group by area / day cluster: build columns dynamically from item.group (falling back to area)
-    if (groupBy === 'area') {
-      const groups = new Map<string, PlaceItem[]>();
-      for (const item of allItems) {
-        const key = (item.group || item.area || 'Unsorted').trim() || 'Unsorted';
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key)!.push(item);
-      }
-      const cols = [...groups.entries()].map(([id, items]) => ({ id: `area:${id}`, title: id, items }));
-      // Relevant cluster(s) first, then larger clusters, Unsorted last
-      return cols.sort((a, b) => {
+    if (groupBy === 'none') return [{ id: 'all', title: 'All saved', items: allItems }];
+    const cell = groupBy === 'area' && mapZoom != null ? cellForZoom(mapZoom) : null;
+    const keyOf = (it: PlaceItem) =>
+      groupBy === 'category' ? catLabel(displayCategory(it))
+      : (cell != null && isGeo(it))
+        ? `${Math.floor((it.lng as number) / cell)}:${Math.floor((it.lat as number) / cell)}`
+        : (it.group || it.area || 'Unsorted');
+    const map = new Map<string, PlaceItem[]>();
+    for (const it of allItems) { const k = keyOf(it) || 'Unsorted'; (map.get(k) ?? map.set(k, []).get(k)!).push(it); }
+    return [...map.entries()]
+      .map(([id, items]) => ({ id, title: groupBy === 'area' ? dominantArea(items) : id, items }))
+      .sort((a, b) => {
+        const aFallback = a.title === 'Unsorted' || a.title === 'Uncategorized';
+        const bFallback = b.title === 'Unsorted' || b.title === 'Uncategorized';
+        if (aFallback !== bFallback) return aFallback ? 1 : -1;
         const ar = hasFocus && a.items.some(isRelevant) ? 0 : 1;
         const br = hasFocus && b.items.some(isRelevant) ? 0 : 1;
         if (ar !== br) return ar - br;
-        if (a.title === 'Unsorted') return 1;
-        if (b.title === 'Unsorted') return -1;
         return b.items.length - a.items.length;
       });
-    }
-    if (activeCategory === 'all') {
-      return pocket.map(col => ({
-        ...col,
-        items: allItems.filter(item => {
-          if (col.id === 'food-drink') return item.category === 'food';
-          if (col.id === 'must-see') return item.category === 'sight';
-          return false;
-        })
-      }));
-    }
-    return [{
-      id: activeCategory,
-      title: activeCategory === 'food-drink' ? 'Food & Drink' : 'Must See',
-      items: allItems
-    }];
-  }, [pocket, allItems, activeCategory, groupBy, hasFocus, focusedDayArea, focusedDayItems]);
+  }, [allItems, groupBy, hasFocus, mapZoom]);
 
   return (
     <section className="flex-1 bg-white border border-border-subtle rounded-2xl overflow-hidden shadow-sm flex flex-col min-h-[160px]">
       {/* Bucket List Main Header */}
-      <div className="px-3 py-2 border-b border-border-subtle flex justify-between items-center bg-white gap-2 shrink-0">
-        <div className="flex items-center gap-2 shrink-0">
+      <div className="px-3 py-2 border-b border-border-subtle flex items-center gap-2 bg-white shrink-0 relative">
+        <div className="flex items-center gap-1.5 shrink-0">
           <ListChecks className="w-4 h-4 text-primary" />
           <h2 className="text-sm font-bold text-on-surface">Bucket List</h2>
         </div>
-        
-        <div className="flex-1 flex items-center gap-2">
-          <div className="flex-1 relative">
-            <Search className="w-3.5 h-3.5 text-secondary absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search list"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-7 py-1.5 bg-slate-50 border border-slate-200 focus:border-primary/60 rounded-xl text-xs outline-none focus:ring-1 focus:ring-primary transition-all font-medium text-on-surface placeholder:text-slate-400"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-secondary hover:text-on-surface p-0.5"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-          
-          {hasFocus && (
-            <button
-              onClick={() => setOnlyRelevant(v => !v)}
-              title={`Show only saved spots relevant to ${focusedDayLabel || 'this day'}`}
-              className={`flex items-center gap-1 px-2 py-1.5 rounded-lg border text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer ${onlyRelevant ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white text-secondary border-slate-200 hover:bg-slate-50'}`}
-            >
-              <MapPin className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{focusedDayLabel || 'This day'}</span>
-            </button>
+
+        <div className="flex-1 relative min-w-0">
+          <Search className="w-3.5 h-3.5 text-secondary absolute left-2.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Search saved places"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-8 pr-7 py-1.5 bg-slate-50 border border-slate-200 focus:border-primary/60 rounded-xl text-xs outline-none focus:ring-1 focus:ring-primary transition-all font-medium text-on-surface placeholder:text-slate-400"
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-secondary hover:text-on-surface p-0.5"><X className="w-3 h-3" /></button>
           )}
-
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`p-1.5 rounded-lg border transition-all cursor-pointer ${showFilters ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white text-secondary border-slate-200 hover:bg-slate-50'}`}
-            title="Filter and Sort"
-          >
-            <Filter className="w-4 h-4" />
-          </button>
-
-          <button
-            onClick={() => setShowAddView(!showAddView)}
-            className={`p-1.5 rounded-lg border transition-all cursor-pointer ${showAddView ? 'bg-primary text-white border-primary shadow-sm' : 'bg-primary text-white border-primary hover:bg-accent-primary-hover shadow-sm'}`}
-            title="Add New Place"
-          >
-            <Plus className={`w-4 h-4 transition-transform ${showAddView ? 'rotate-45' : ''}`} />
-          </button>
         </div>
+
+        {hasFocus && (
+          <button onClick={() => setOnlyRelevant(v => !v)} title={`Only spots relevant to ${focusedDayLabel || 'this day'}`}
+            className={`flex items-center gap-1 px-2 py-1.5 rounded-lg border text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${onlyRelevant ? 'bg-primary text-white border-primary' : 'bg-white text-secondary border-slate-200 hover:bg-slate-50'}`}>
+            <MapPin className="w-3.5 h-3.5" /><span className="hidden lg:inline">{focusedDayLabel || 'This day'}</span>
+          </button>
+        )}
+
+        {/* Add (blue) */}
+        <button onClick={() => setShowAddView(!showAddView)} title="Add a place"
+          className="p-1.5 rounded-lg border border-primary bg-primary text-white hover:bg-accent-primary-hover shadow-sm transition-all cursor-pointer shrink-0">
+          <Plus className={`w-4 h-4 transition-transform ${showAddView ? 'rotate-45' : ''}`} />
+        </button>
+
+        {/* Sort (icon only) */}
+        <div className="relative shrink-0">
+          <button onClick={() => setOpenMenu(openMenu === 'sort' ? null : 'sort')} title={`Sort: ${SORT_LABEL[sortBy]}`}
+            className={`p-1.5 rounded-lg border bg-white transition-all cursor-pointer ${openMenu === 'sort' ? 'border-primary text-primary' : 'border-slate-200 text-secondary hover:bg-slate-50'}`}>
+            <ArrowUpDown className="w-4 h-4" />
+          </button>
+          {openMenu === 'sort' && (
+            <div className="absolute right-0 top-full mt-1.5 w-40 bg-white border border-border-subtle rounded-xl shadow-xl z-30 py-1 animate-fadeIn">
+              {(['name', 'rating', 'category', 'area'] as const).map(s => (
+                <button key={s} onClick={() => { setSortBy(s); setOpenMenu(null); }}
+                  className={`w-full flex items-center justify-between px-3 py-1.5 text-xs hover:bg-slate-50 cursor-pointer ${sortBy === s ? 'text-primary font-bold' : 'text-on-surface-variant font-medium'}`}>
+                  {SORT_LABEL[s]} {sortBy === s && <Check className="w-3.5 h-3.5" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Filter (icon only · dot when active) */}
+        <div className="relative shrink-0">
+          <button onClick={() => setOpenMenu(openMenu === 'filter' ? null : 'filter')} title="Filter"
+            className={`relative p-1.5 rounded-lg border bg-white transition-all cursor-pointer ${activeFilters || openMenu === 'filter' ? 'border-primary text-primary' : 'border-slate-200 text-secondary hover:bg-slate-50'}`}>
+            <Filter className="w-4 h-4" />
+            {activeFilters > 0 && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary border border-white" />}
+          </button>
+          {openMenu === 'filter' && (
+            <div className="absolute right-0 top-full mt-1.5 w-[22rem] max-w-[calc(100vw-1rem)] max-h-[72vh] overflow-y-auto custom-scrollbar bg-white border border-border-subtle rounded-xl shadow-xl z-30 p-3 animate-fadeIn">
+              <div className="grid grid-cols-2 gap-x-3 items-start">
+                {/* LEFT — Region, Budget, Rating, Group by */}
+                <div className="flex flex-col gap-3 min-w-0 border-r border-border-subtle pr-3">
+                  {/* Region — free-text (no list) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5 h-4">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Region</span>
+                    </div>
+                    <div className="relative">
+                      <MapPin className="w-3.5 h-3.5 text-secondary absolute left-2 top-1/2 -translate-y-1/2" />
+                      <input type="text" value={regionQuery} onChange={(e) => setRegionQuery(e.target.value)} placeholder="e.g. Kyoto…"
+                        className="w-full pl-7 pr-7 py-1.5 bg-slate-50 border border-slate-200 focus:border-primary/60 rounded-lg text-xs outline-none focus:ring-1 focus:ring-primary font-medium text-on-surface placeholder:text-slate-400" />
+                      {regionQuery && <button onClick={() => setRegionQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-secondary hover:text-on-surface p-0.5"><X className="w-3 h-3" /></button>}
+                    </div>
+                  </div>
+
+                  {/* Budget */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5 gap-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Budget</span>
+                      <span className="text-[10px] font-bold text-on-surface-variant truncate">{BUDGET_LABEL[budgetRange[0]]}–{BUDGET_LABEL[budgetRange[1]]}</span>
+                    </div>
+                    <RangeBar min={0} max={BUDGET_MAX} step={1} lo={budgetRange[0]} hi={budgetRange[1]} onChange={setBudgetRange} />
+                  </div>
+
+                  {/* Rating */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5 gap-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rating</span>
+                      <span className="text-[10px] font-bold text-on-surface-variant flex items-center gap-0.5">{ratingRange[0].toFixed(1)}–{ratingRange[1].toFixed(1)}<Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500" /></span>
+                    </div>
+                    <RangeBar min={0} max={RATING_MAX} step={0.5} lo={ratingRange[0]} hi={ratingRange[1]} onChange={setRatingRange} />
+                  </div>
+
+                  {/* Group by */}
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Layers className="w-3 h-3" /> Group by</span>
+                    <div className="flex gap-1 mt-1.5">
+                      {(['none', 'category', 'area'] as const).map(g => (
+                        <button key={g} onClick={() => setGroupBy(g)} className={`flex-1 px-0.5 py-1 rounded-md text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer ${groupBy === g ? 'bg-primary text-white' : 'bg-slate-50 text-secondary hover:bg-slate-100'}`}>
+                          {GROUP_LABEL[g]}
+                        </button>
+                      ))}
+                    </div>
+                    {groupBy === 'area' && (
+                      <p className="text-[10px] text-secondary mt-1.5">Follows map zoom — <span className="font-bold text-on-surface-variant">{areaTier(mapZoom)}</span>.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* RIGHT — Category (each row expands to its sub-categories) */}
+                <div className="flex flex-col min-w-0">
+                  <div className="flex items-center justify-between mb-1.5 h-4">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Category</span>
+                    {(selectedCategories.length > 0 || selectedSubs.length > 0) && (
+                      <button onClick={() => { setSelectedCategories([]); setSelectedSubs([]); }} className="text-[10px] font-bold text-primary hover:underline cursor-pointer">Clear</button>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-0.5 max-h-72 overflow-y-auto custom-scrollbar -mr-1 pr-1">
+                    {facets.cats.map(([cat, count]) => {
+                      const on = selectedCategories.includes(cat);
+                      const subs = [...(facets.subsByCat.get(cat) ?? new Map<string, number>()).entries()].sort((a, b) => b[1] - a[1]);
+                      const expanded = expandedCats.includes(cat);
+                      return (
+                        <div key={cat}>
+                          <div className="flex items-center gap-1 px-1 py-1 rounded-md hover:bg-slate-50">
+                            <button onClick={() => toggle(selectedCategories, cat, setSelectedCategories)} className="flex items-center gap-1.5 flex-1 min-w-0 cursor-pointer">
+                              <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${on ? 'bg-primary border-primary text-white' : 'border-slate-300'}`}>{on && <Check className="w-2.5 h-2.5" />}</span>
+                              <span className="text-xs font-medium text-on-surface truncate">{catLabel(cat)}</span>
+                            </button>
+                            <span className="text-[10px] text-secondary font-bold shrink-0">{count}</span>
+                            {subs.length > 0 && (
+                              <button onClick={() => toggle(expandedCats, cat, setExpandedCats)} title="Show sub-categories" className="text-secondary hover:text-on-surface cursor-pointer shrink-0">
+                                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                              </button>
+                            )}
+                          </div>
+                          {expanded && subs.length > 0 && (
+                            <div className="ml-4 flex flex-col gap-0.5 border-l border-border-subtle pl-2 py-0.5">
+                              {subs.map(([sub, sc]) => {
+                                const son = selectedSubs.includes(sub);
+                                return (
+                                  <button key={sub} onClick={() => toggle(selectedSubs, sub, setSelectedSubs)} className="flex items-center justify-between gap-1 px-1 py-0.5 rounded hover:bg-slate-50 cursor-pointer">
+                                    <span className="flex items-center gap-1.5 min-w-0">
+                                      <span className={`w-3 h-3 rounded border flex items-center justify-center shrink-0 ${son ? 'bg-primary border-primary text-white' : 'border-slate-300'}`}>{son && <Check className="w-2 h-2" />}</span>
+                                      <span className="text-[11px] text-on-surface-variant truncate">{sub}</span>
+                                    </span>
+                                    <span className="text-[10px] text-secondary font-bold shrink-0">{sc}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {openMenu && <div className="fixed inset-0 z-20" onClick={() => setOpenMenu(null)} />}
       </div>
 
-      {/* Filter and Sort Sub-header */}
-      {showFilters && (
-        <div className="px-3 py-2 bg-slate-50 border-b border-border-subtle flex flex-wrap items-center gap-4 animate-fadeIn">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Category:</span>
-            <div className="flex bg-white p-0.5 rounded-lg border border-slate-200">
-              {(['all', 'must-see', 'food-drink'] as const).map(cat => (
-                <button
-                  key={cat}
-                  onClick={() => setActiveCategory(cat)}
-                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all capitalize cursor-pointer ${activeCategory === cat ? 'bg-primary text-white shadow-sm' : 'text-secondary hover:bg-slate-50'}`}
-                >
-                  {cat.replace('-', ' ')}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Group by:</span>
-            <div className="flex bg-white p-0.5 rounded-lg border border-slate-200">
-              {(['category', 'area'] as const).map(g => (
-                <button
-                  key={g}
-                  onClick={() => setGroupBy(g)}
-                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${groupBy === g ? 'bg-primary text-white shadow-sm' : 'text-secondary hover:bg-slate-50'}`}
-                >
-                  {g === 'area' ? 'Area / Day' : 'Category'}
-                </button>
-              ))}
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sort by:</span>
-            <div className="flex bg-white p-0.5 rounded-lg border border-slate-200">
-              {(['name', 'category', 'rating'] as const).map(s => (
-                <button
-                  key={s}
-                  onClick={() => setSortBy(s)}
-                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all capitalize cursor-pointer ${sortBy === s ? 'bg-primary text-white shadow-sm' : 'text-secondary hover:bg-slate-50'}`}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Add Place Overlay */}
       {showAddView && (
@@ -492,16 +609,13 @@ export default function PocketPanel({
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1 bg-bg-panel-muted p-3 overflow-y-auto custom-scrollbar">
-        <div className="flex flex-col sm:flex-row flex-wrap gap-3 min-h-full justify-stretch items-stretch">
+      <div className="@container flex-1 bg-bg-panel-muted px-2 pb-2 overflow-y-auto custom-scrollbar">
+        <div className="flex flex-col gap-2 min-h-full">
           {displayColumns.map((col) => {
-            const isFood = col.id === 'food-drink' || col.items.some(i => i.category === 'food');
-            const IconComponent = isFood ? Coffee : Compass;
-
             return (
-              <div 
-                key={col.id} 
-                className="flex-1 min-w-[240px] flex flex-col gap-2 p-2 rounded-2xl border border-transparent transition-all duration-150"
+              <div
+                key={col.id}
+                className="flex flex-col gap-1 rounded-2xl border border-transparent transition-all duration-150"
                 onDragOver={(e) => {
                   e.preventDefault();
                   e.currentTarget.classList.add('bg-slate-100/50', 'border-slate-300/40', 'border-dashed');
@@ -518,9 +632,9 @@ export default function PocketPanel({
                       if (data.type === 'calendar-item' && onDropCalendarItem) {
                         // In Area/Day view the columns are dynamic (id "area:..."), not real
                         // storage columns — route the dropped item to its category column instead.
-                        const targetId = col.id.startsWith('area:')
-                          ? (data.item?.category === 'food' ? 'food-drink' : 'must-see')
-                          : col.id;
+                        // Groups are dynamic (id = group label), not storage columns — route the
+                        // dropped item to its category's storage column.
+                        const targetId = data.item?.category === 'food' ? 'food-drink' : 'must-see';
                         onDropCalendarItem(data.itemId, targetId);
                       }
                     }
@@ -529,9 +643,9 @@ export default function PocketPanel({
                   }
                 }}
               >
-                <h4 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant flex items-center justify-between pointer-events-auto">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant flex items-center justify-between pointer-events-auto sticky top-0 bg-bg-panel-muted z-[2] py-1.5 border-b border-border-subtle">
                   <span className="flex items-center gap-1.5 font-bold">
-                    <IconComponent className={`w-3.5 h-3.5 ${isFood ? 'text-cat-food' : 'text-primary'}`} />
+                    <Layers className="w-3.5 h-3.5 text-primary" />
                     {col.title}
                   </span>
                   <span className="text-[10px] font-bold text-secondary bg-surface-container px-1.5 py-0.5 rounded border border-border-subtle">
@@ -539,7 +653,7 @@ export default function PocketPanel({
                   </span>
                 </h4>
 
-                <div className="flex flex-col gap-2 mt-1">
+                <div className="grid grid-cols-1 @lg:grid-cols-2 gap-1.5 mt-0.5">
                    {col.items.map((item) => {
                     const isSelected = selectedItemId === item.id;
                     return (
@@ -557,16 +671,16 @@ export default function PocketPanel({
                           if ((e.target as HTMLElement).closest('button')) return;
                           onSelectItem?.(isSelected ? undefined : item.id);
                         }}
-                        className={`p-3 rounded-xl flex flex-col items-stretch group transition-all duration-150 shadow-sm border ${
+                        className={`p-2 rounded-xl flex flex-col items-stretch group transition-all duration-150 shadow-sm border ${
                           isSelected
                             ? 'bg-primary/5 border-primary/80 ring-1 ring-primary/20 shadow-md cursor-pointer'
                             : 'bg-white border-border-subtle hover:border-primary/50 cursor-grab active:cursor-grabbing'
                         }`}
                         id={`pocket-card-${item.id}`}
                       >
-                        <div className="flex items-start justify-between w-full">
-                          <div className="flex items-start gap-3 min-w-0 flex-1">
-                            <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 border border-slate-100 shadow-sm bg-slate-50">
+                        <div className="flex items-center justify-between w-full gap-1">
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            <div className="w-11 h-11 rounded-lg overflow-hidden shrink-0 border border-slate-100 shadow-sm bg-slate-50">
                               <img 
                                 src={item.imageUrl || `https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?q=80&w=150&auto=format&fit=crop`} 
                                 alt={item.title}
@@ -574,7 +688,7 @@ export default function PocketPanel({
                                 referrerPolicy="no-referrer"
                               />
                             </div>
-                            <div className="min-w-0 flex-1 flex flex-col h-14">
+                            <div className="min-w-0 flex-1">
                               <div className="min-w-0">
                                 <p className="text-xs font-bold text-on-surface leading-tight truncate">
                                   {hasFocus && isRelevant(item) && (
@@ -582,9 +696,20 @@ export default function PocketPanel({
                                       <MapPin className="w-2 h-2 mr-0.5" />Near
                                     </span>
                                   )}
+                                  {statusTags(item).includes('booked') && (
+                                    <span className="inline-flex items-center align-middle mr-1 px-1 py-0.5 rounded bg-success/10 text-success text-[8px] font-bold uppercase tracking-wide" title="Reservation made">Booked</span>
+                                  )}
+                                  {statusTags(item).includes('backup') && (
+                                    <span className="inline-flex items-center align-middle mr-1 px-1 py-0.5 rounded bg-slate-100 text-secondary text-[8px] font-bold uppercase tracking-wide" title="Optional / fallback">Backup</span>
+                                  )}
                                   {item.title}
                                 </p>
                                 <div className="text-[10px] text-slate-500 font-medium mt-0.5 flex items-center gap-1.5 leading-tight">
+                                  {item.rating && (
+                                    <span className="flex items-center gap-0.5 text-amber-500 font-bold">
+                                      <Star className="w-2.5 h-2.5 fill-amber-500" /> {item.rating}
+                                    </span>
+                                  )}
                                   {item.openingHours ? (
                                     <span className="flex items-center gap-1 text-on-surface-variant">
                                       {item.openingHours}
@@ -593,26 +718,21 @@ export default function PocketPanel({
                                     <span className="flex items-center gap-1"><MapPin className="w-2.5 h-2.5" />{item.area}</span>
                                   )}
                                 </div>
-                                <div className="text-[10px] text-slate-400 font-medium mt-1 flex items-center gap-1.5 leading-tight">
+                                <div className="text-[10px] text-slate-400 font-medium mt-0.5 flex items-center gap-1.5 leading-tight">
                                   {item.subCategory && <span className="flex items-center gap-1"><Tag className="w-2.5 h-2.5" />{item.subCategory}</span>}
                                   {item.subCategory && item.budget && <span className="opacity-40">•</span>}
                                   {item.budget && <span className="text-primary font-bold">{item.budget}</span>}
-                                  {item.rating && (
-                                    <span className="flex items-center gap-0.5 ml-auto text-amber-500 font-bold">
-                                      <Star className="w-2.5 h-2.5 fill-amber-500" /> {item.rating}
-                                    </span>
-                                  )}
                                 </div>
                               </div>
                             </div>
                           </div>
-                          <div className="flex flex-col items-center gap-2 shrink-0 ml-1">
+                          <div className="flex flex-col items-center gap-0.5 shrink-0">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 onRemovePocketItem?.(item.id);
                               }}
-                              className="p-1 rounded-md hover:bg-black/5 opacity-40 hover:opacity-100 text-slate-500 hover:text-red-500 transition-all cursor-pointer shrink-0"
+                              className="p-0.5 rounded-md hover:bg-black/5 opacity-40 hover:opacity-100 text-slate-500 hover:text-red-500 transition-all cursor-pointer shrink-0"
                               title="Remove from Bucket List"
                             >
                               <X className="w-3.5 h-3.5" />
@@ -620,15 +740,25 @@ export default function PocketPanel({
                             <button
                               onClick={() => onPromoteItem(item)}
                               title="Schedule this stop"
-                              className="p-1 hover:bg-accent-soft rounded-lg text-secondary hover:text-primary transition-colors cursor-pointer shrink-0"
+                              className="p-0.5 hover:bg-accent-soft rounded-lg text-secondary hover:text-primary transition-colors cursor-pointer shrink-0"
                             >
-                              <PlusCircle className="w-5 h-5" />
+                              <PlusCircle className="w-4 h-4" />
                             </button>
                           </div>
                         </div>
                         {isSelected && (
                           <div className="mt-2 animate-fadeIn">
-                             <GooglePlaceDetailsCard title={item.title} category={item.category} />
+                             <GooglePlaceDetailsCard
+                               title={item.title}
+                               category={item.category}
+                               rating={item.rating}
+                               userRatingCount={item.userRatingCount}
+                               phoneNumber={item.phoneNumber}
+                               website={item.website}
+                               formattedAddress={item.formattedAddress}
+                               openingHours={item.openingHours}
+                               editorialSummary={item.editorialSummary}
+                             />
                           </div>
                         )}
                       </div>
