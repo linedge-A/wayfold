@@ -9,6 +9,7 @@ import { Sparkles, Map, Bot, Compass, Plus, ShieldAlert, Calendar, AlertTriangle
 import { APIProvider, useMapsLibrary } from '@vis.gl/react-google-maps';
 // ...
 import TopHeader from './TopHeader';
+import { placeItemsToPool } from '@/modules/trip-brief/placeItemsToPool';
 import ItineraryPanel from '@/modules/itinerary/ItineraryPanel';
 import MapPanel from '@/modules/map/MapPanel';
 import PocketPanel from '@/modules/pocket/PocketPanel';
@@ -110,6 +111,40 @@ function AppContent() {
   useEffect(() => {
     saveJSON(pocketKey(appState.tripBrief.id), appState.pocket);
   }, [appState.pocket, appState.tripBrief.id]);
+
+  // Phase 3: a generated proposal (planned FROM the Research Pocket) becomes the active trip.
+  // Flatten the engine's day buckets into the board's flat itineraryItems, build the day metadata,
+  // and drop the now-scheduled POIs from the pocket (overflow stays behind for the user).
+  const handleGenerated = (result: any) => {
+    setAppState(prev => {
+      const scheduledIds = new Set<string>();
+      const itineraryItems = result.itineraryDays.flatMap((d: any) =>
+        d.items.map((it: any) => {
+          scheduledIds.add(it.id);
+          return { ...it, dayId: d.id, pinState: it.pinState ?? 'none', priority: it.priority ?? 'medium', status: 'scheduled' };
+        }));
+      const itineraryDays = result.itineraryDays.map((d: any, i: number) => {
+        const dt = d.date ? new Date(`${d.date}T00:00:00`) : null;
+        const valid = dt && !Number.isNaN(dt.getTime());
+        return {
+          id: d.id,
+          label: valid ? dt!.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase() : `DAY ${i + 1}`,
+          date: valid ? String(dt!.getDate()) : String(i + 1),
+          fullDateString: valid ? dt!.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) : `Day ${i + 1}`,
+          areaSummary: d.areaSummary,
+        };
+      });
+      const pocket = prev.pocket.map(col => ({ ...col, items: col.items.filter(p => !scheduledIds.has(p.id)) }));
+      return {
+        ...prev,
+        tripBrief: { ...prev.tripBrief, ...(result.brief ?? {}), id: prev.tripBrief.id },
+        itineraryDays,
+        itineraryItems,
+        selectedDayId: itineraryDays[0]?.id ?? prev.selectedDayId,
+        pocket,
+      };
+    });
+  };
 
   const [viewType, setViewType] = useState<'day' | 'week' | 'month'>('day');
   const [focusMode, setFocusMode] = useState<boolean>(false);
@@ -931,6 +966,8 @@ function AppContent() {
           showComponentSheet={showComponentSheet}
           currentView={appState.currentView}
           onViewChange={(view) => setAppState(prev => ({ ...prev, currentView: view }))}
+          pool={placeItemsToPool(appState.pocket, { scheduledIds: appState.itineraryItems.map(i => i.id) })}
+          onGenerated={handleGenerated}
         />
 
         {/* Adaptive Mobile Workspace Navigation Tab bar */}

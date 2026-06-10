@@ -2,8 +2,23 @@
 
 **From:** pocket/map work (Agents 4 & 5)
 **To:** Agent 2 (trip-brief / generation) — primary · Agent 7 (constraint-engine) — only if scoring/day-assignment needs tuning · Agent 0 (shell) — one prop thread
-**Status:** ready to start. Phases 1, 2, 4 of the unified-pocket plan are merged to `main`; Phase 3 is the remaining headline.
+**Status:** ✅ **IMPLEMENTED** (this PR). Phases 1, 2, 4 were already merged; Phase 3 (the seam) is now wired end-to-end.
 **Owner of this doc:** hand-off note — Agent 0 to link from `agent.md` if kept.
+
+---
+
+## ✅ Implemented in this PR
+
+The seam is closed — "Plan new trip" now generates **from the user's Research Pocket**, not `SAMPLE_POOL`.
+
+| Piece | File | Notes |
+|---|---|---|
+| `PlaceItem[] → EngineItem[]` mapper | `modules/trip-brief/placeItemsToPool.ts` | flattens pocket columns, **dedups against the board** (`scheduledIds`), carries `signals`/`stopClass`/`priority`/`tags`, drops `group`; **empty pocket → sample fallback** (never an empty trip) |
+| Prop thread | `app-shell/App.tsx` → `app-shell/TopHeader.tsx` → `PlanInitiateModal pool` | App builds the pool from `appState.pocket` (minus already-scheduled) and passes it down |
+| Result → board | `app-shell/App.tsx` `handleGenerated` | flattens the generated day buckets into flat `itineraryItems`, builds `itineraryDays` metadata, sets the active day, and **removes scheduled POIs from the pocket** (overflow stays) |
+| Verification | `modules/trip-brief/run-pocket.ts` | must-sees land · `skip`-verdict excluded · already-scheduled deduped · empty→fallback — all green. `tsc` clean (baseline 3 `ErrorBoundary` errors only); `vite build` passes |
+
+**Deliberate scope notes:** sample top-up only fires for an *empty* pocket (the sample is Kyoto-specific demo data — blending it into a real non-Kyoto pocket would mix unrelated places); a "Regenerate on an active trip" action that honours the Itinerary-Stability guardrail (pinned/locked stay put) remains future work and belongs to the constraint-engine replanning path, not this from-scratch generate.
 
 ---
 
