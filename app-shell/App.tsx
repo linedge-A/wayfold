@@ -4,8 +4,8 @@
  */
 
 // ... (keep initial comments)
-import React, { useState, useEffect, useMemo, Component, ErrorInfo, ReactNode } from 'react';
-import { Sparkles, Map, Bot, Compass, Plus, ShieldAlert, Calendar, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Sparkles, Map, Bot, Compass, Plus, ShieldAlert, Calendar } from 'lucide-react';
 import { APIProvider, useMapsLibrary } from '@vis.gl/react-google-maps';
 // ...
 import TopHeader from './TopHeader';
@@ -30,58 +30,8 @@ import { loadJSON, saveJSON, pocketKey } from '@/shared/utils/persistence';
 import { getTrip } from '@/shared/mock-data/trips';
 import { getLocalCopilotResponse } from '@/modules/copilot/localResponses';
 
-// Safely resolve the Google Maps API Key from multiple potential environment sources
-const API_KEY = (
-  process.env.GOOGLE_MAPS_PLATFORM_KEY ||
-  (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
-  (globalThis as any).GOOGLE_MAPS_PLATFORM_KEY ||
-  ''
-).trim();
-
-// Check if the key looks like a real key and not a placeholder or empty
-const IS_VALID_KEY = Boolean(API_KEY) && 
-                    API_KEY !== 'YOUR_API_KEY' && 
-                    API_KEY.length > 10;
-
-// Simple Error Boundary to catch generic "Script error." and runtime failures
-class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
-  // NOTE: @types/react is not installed, so the base Component generics don't surface `state`/`props`
-  // on the subclass — declare them explicitly. Root fix: add @types/react + @types/react-dom (devDeps).
-  state: { hasError: boolean } = { hasError: false };
-  declare readonly props: { children: ReactNode };
-
-  static getDerivedStateFromError(_: Error) {
-    return { hasError: true };
-  }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("Uncaught application error:", error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="w-full h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
-          <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mb-4">
-            <AlertTriangle className="w-8 h-8" />
-          </div>
-          <h1 className="text-xl font-bold text-slate-900 mb-2">Something went wrong</h1>
-          <p className="text-sm text-slate-600 mb-6 max-w-md mx-auto">
-            The application encountered an unexpected error. This can sometimes happen due to script loading failures or API quota limits.
-          </p>
-          <button 
-            onClick={() => window.location.reload()}
-            className="px-6 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-md hover:opacity-90 transition-all cursor-pointer"
-          >
-            Reload Application
-          </button>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
-}
+import ErrorBoundary from './ErrorBoundary';
+import { API_KEY, IS_VALID_KEY } from './mapsKey';
 
 export default function App() {
   return (
