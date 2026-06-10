@@ -48,12 +48,12 @@ export interface GenerateResult {
 }
 export interface GenerateOptions {
   persona?: Persona;    // not part of TripBrief; an engine-only dial (default 'default')
+  interests?: string[]; // remembered/derived interests (AGENTS.md or parsed notes) → engine boost
   dayCount?: number;    // explicit override when dates are absent / flexible
-  defaultDays?: number; // fallback when no dates and no override (default 3)
+  defaultDays?: number; // fallback when no dates/override (default: trip sized to the candidate pool)
 }
 
 const MS_DAY = 86_400_000;
-const DEFAULT_DAYS = 3;
 
 // Pace mirrors planner.ts (destinations/day) so Tier-1 fills a day to the same cap the engine uses.
 const PACE_BY_STYLE: Record<string, number> = { relaxing: 3, luxury: 3, balanced: 4, budget: 4, intense: 5 };
@@ -142,17 +142,21 @@ const clusterAssignDays = (items: EngineItem[], dayIds: string[], perDay: number
 
 export function generateFromBrief(brief: TripBrief, pool: EngineItem[], opts: GenerateOptions = {}): GenerateResult {
   const persona = opts.persona ?? 'default';
-  const count = Math.max(1, opts.dayCount ?? daySpan(brief.startDate, brief.endDate) ?? opts.defaultDays ?? DEFAULT_DAYS);
-  const dayIds = Array.from({ length: count }, (_, i) => `day-${i + 1}`);
   const perDay = paceFor(brief.style, persona);
+  // Dates given → honour them. Flexible (no dates) → size the trip to the candidate pool so the
+  // plan doesn't leave empty days or cram everything into an arbitrary default.
+  const placeable = pool.filter(it => it.signals?.verdict !== 'skip').length || pool.length;
+  const flexibleDays = Math.min(14, Math.max(1, Math.ceil(placeable / perDay)));
+  const count = Math.max(1, opts.dayCount ?? daySpan(brief.startDate, brief.endDate) ?? opts.defaultDays ?? flexibleDays);
+  const dayIds = Array.from({ length: count }, (_, i) => `day-${i + 1}`);
 
   // Clone so we never mutate the caller's pool. Tier-1 day-assigns only the still-unassigned
   // candidates; anything already bound to a day (bookings/pins) keeps its place.
   const planned = pool.map(it => ({ ...it }));
   clusterAssignDays(planned.filter(it => !it.dayId), dayIds, perDay);
 
-  // Tier-2: the engine fills each day (style passes straight through; persona is engine-only).
-  const result = generateItinerary({ brief: { style: brief.style, persona }, dayIds, pool: planned });
+  // Tier-2: the engine fills each day (style passes straight through; persona + interests are dials).
+  const result = generateItinerary({ brief: { style: brief.style, persona, interests: opts.interests }, dayIds, pool: planned });
 
   // Assemble ONE proposal: group the scheduled items into days (engine already time-orders them).
   const fixedStart = brief.flexibleDates ? undefined : brief.startDate;
@@ -169,4 +173,64 @@ export function generateFromBrief(brief: TripBrief, pool: EngineItem[], opts: Ge
   }));
 
   return { itineraryDays, pocket: result.overflow, flags: result.flags, notes: result.notes };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Form → brief mapping (what the trip-brief modal collects → a TripBrief + dials)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Raw shape the PlanInitiateModal emits. */
+export interface BriefFormData {
+  destinations?: string[];
+  dateRange?: { start?: string; end?: string };
+  groupSize?: { adults?: number; children?: number };
+  style?: TripBrief['style'];
+  notes?: string;
+  flexibleDates?: boolean;
+}
+
+// Notes are freeform; pull known interest tokens so the engine can boost matching stops. The engine
+// caps the boost, so an over-eager match only nudges — it never overrides a hard signal/pin.
+const INTEREST_VOCAB = [
+  'food', 'ramen', 'sushi', 'market', 'tavern', 'tasting', 'cafe', 'coffee', 'street food',
+  'temple', 'shrine', 'zen', 'garden', 'museum', 'gallery', 'architecture', 'history', 'historic',
+  'walking', 'hiking', 'nature', 'scenic', 'viewpoint', 'nightlife', 'shopping', 'onsen', 'art',
+];
+const extractInterests = (notes?: string): string[] => {
+  if (!notes) return [];
+  const t = notes.toLowerCase();
+  return INTEREST_VOCAB.filter(k => t.includes(k));
+};
+
+/** Group composition → engine persona (drives pace + dwell). */
+const personaFromGroup = (g?: { adults?: number; children?: number }): Persona => {
+  const adults = g?.adults ?? 2, children = g?.children ?? 0;
+  if (children > 0) return 'family';
+  if (adults >= 4) return 'friends';
+  if (adults <= 1) return 'solo';
+  if (adults === 2) return 'couple';
+  return 'default';
+};
+
+/** Map the modal's raw form payload onto a TripBrief plus the engine dials it implies. */
+export function briefFromForm(form: BriefFormData, id = `trip-${Date.now()}`): { brief: TripBrief; options: GenerateOptions } {
+  const dests = (form.destinations ?? []).map(s => s.trim()).filter(Boolean);
+  const hasDates = !!(form.dateRange?.start && form.dateRange?.end);
+  const brief: TripBrief = {
+    id,
+    title: dests[0] ? `${dests[0]} Trip` : 'New Trip',
+    destination: dests.join(' → ') || 'Trip',
+    startDate: form.dateRange?.start || undefined,
+    endDate: form.dateRange?.end || undefined,
+    flexibleDates: form.flexibleDates ?? !hasDates,
+    style: form.style ?? 'balanced',
+    notes: form.notes || undefined,
+  };
+  return { brief, options: { persona: personaFromGroup(form.groupSize), interests: extractInterests(form.notes) } };
+}
+
+/** One-call convenience for the form: raw payload → one itinerary proposal (+ the derived brief). */
+export function generateFromForm(form: BriefFormData, pool: EngineItem[]): GenerateResult & { brief: TripBrief } {
+  const { brief, options } = briefFromForm(form);
+  return { ...generateFromBrief(brief, pool, options), brief };
 }
