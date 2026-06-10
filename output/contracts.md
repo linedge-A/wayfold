@@ -51,8 +51,10 @@ interface PlaceItem {
   tripRole?: 'anchor' | 'supporting' | 'optional'
   reservationBound?: boolean
   tags?: string[]
+  group?: string   // organizing cluster for the Research Pocket (area / day label, set at ingestion); used to group the pocket and surface day-relevant POIs while planning
 }
 ```
+> `group` added by the unified-pocket work (Agent 5, with Agent 9 contract notice). Optional & additive — existing producers/consumers are unaffected; the pocket falls back to `area` when it is absent.
 
 ### ItineraryItem
 ```ts
