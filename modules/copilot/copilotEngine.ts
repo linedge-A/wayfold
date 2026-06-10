@@ -15,7 +15,7 @@
  *   ingestLinks()       — parse pasted blog/article/link text into Pocket candidates,
  *                         surfaced as a Smart-Add suggestion (draft-to-Pocket per AGENTS.md).
  */
-import type { ItineraryItem, PlaceItem, RevisionDelta } from '../../shared/types/index';
+import type { ItineraryItem, PlaceItem, RevisionDelta, BookingRecord } from '../../shared/types/index';
 import { generateItinerary } from '../constraint-engine/planner';
 import type { IngestedCandidate } from '../ingestion/extractCandidates';
 import { dispatchIngestion } from '../ingestion/dispatchIngestion';
@@ -26,6 +26,9 @@ export interface EngineResult {
   updatedItems?: ItineraryItem[];
   updatedPocket?: any[];
   deltas?: RevisionDelta[];
+  // Parsed bookings from a pasted confirmation — the App applies these via applyBookings()
+  // (record → wallet, reservationBound items → locked anchors). Separate from place candidates.
+  bookings?: { record: BookingRecord; items: ItineraryItem[] }[];
   suggestion?: {
     type: 'Suggested Adjustment' | 'Smart Add' | 'Conflict Alert';
     title: string;
@@ -122,6 +125,7 @@ export function ingestLinks(
   if (!keep.length) {
     return {
       message: bookingNote || "I read that through but couldn't pull out clear places to save. Paste a few sentences naming venues (a market, a temple, a café) and I'll extract them.",
+      ...(result.bookings.length ? { bookings: result.bookings } : {}),
     };
   }
 
@@ -144,6 +148,7 @@ export function ingestLinks(
       actionLabel: `Add ${ordered.length} to Pocket`,
       itemsToAdd: ordered as PlaceItem[],
     },
+    ...(result.bookings.length ? { bookings: result.bookings } : {}),
   };
 }
 
