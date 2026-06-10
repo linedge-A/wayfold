@@ -17,7 +17,8 @@
  */
 import type { ItineraryItem, PlaceItem, RevisionDelta } from '../../shared/types/index';
 import { generateItinerary } from '../constraint-engine/planner';
-import { extractCandidates, type IngestedCandidate } from '../ingestion/extractCandidates';
+import type { IngestedCandidate } from '../ingestion/extractCandidates';
+import { dispatchIngestion } from '../ingestion/dispatchIngestion';
 import { USER_PREFERENCES, prefsToBrief, type UserPreferences } from './userPreferences';
 
 export interface EngineResult {
@@ -106,13 +107,22 @@ export function ingestLinks(
   areaHint = '',
 ): EngineResult {
   const url = rawText.match(URL_RE)?.[0];
-  const all = extractCandidates({ rawText, sourceType, sourceUrl: url, areaHint });
+  // ONE router: dispatchIngestion routes blog/booking/JSON-LD to the shared parsers. ingestLinks is
+  // the copilot presentation layer over it (interest ordering + draft-to-Pocket messaging). Routing
+  // here also means a pasted CONFIRMATION is correctly recognised as a booking, not a blog.
+  const result = dispatchIngestion({ surface: 'copilot-paste', rawText, url, areaHint, sourceType });
+  const all = result.candidates as IngestedCandidate[];
   // verdict:skip are surfaced separately, not pushed into the import set
   const keep = all.filter(c => c.signals?.verdict !== 'skip');
   const skipped = all.filter(c => c.signals?.verdict === 'skip');
+  const bookingNote = result.bookings.length
+    ? `Recognised ${result.bookings.length} booking${result.bookings.length === 1 ? '' : 's'} to lock into your schedule. `
+    : '';
 
   if (!keep.length) {
-    return { message: "I read that through but couldn't pull out clear places to save. Paste a few sentences naming venues (a market, a temple, a café) and I'll extract them." };
+    return {
+      message: bookingNote || "I read that through but couldn't pull out clear places to save. Paste a few sentences naming venues (a market, a temple, a café) and I'll extract them.",
+    };
   }
 
   // order by remembered interest, then verdict strength — best picks first in the card
@@ -126,7 +136,7 @@ export function ingestLinks(
   const stage = prefs.draftToPocketFirst ? 'staged in your Research Pocket' : 'ready to add';
 
   return {
-    message: `Pulled ${ordered.length} place${ordered.length === 1 ? '' : 's'} from that ${sourceType} — ${stage}, tagged with how the writer rated each and the best time to go.${lead}${skipNote}`,
+    message: `${bookingNote}Pulled ${ordered.length} place${ordered.length === 1 ? '' : 's'} from that ${sourceType} — ${stage}, tagged with how the writer rated each and the best time to go.${lead}${skipNote}`,
     suggestion: {
       type: 'Smart Add',
       title: `${ordered.length} places from ${url ? hostOf(url) : sourceType}`,
