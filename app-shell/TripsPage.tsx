@@ -12,14 +12,32 @@ import { motion } from 'motion/react';
 import { Map, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
 import { useEffect, useMemo } from 'react';
 
+// Mirror MapPanel/App: only mount <Map> with a real key. Without one the Maps API
+// fails to load and <Map>/<AdvancedMarker> throw, taking the whole page down via the
+// app-level ErrorBoundary. (TODO: extract this key check into a shared util.)
+const MAPS_KEY =
+  (typeof process !== 'undefined' ? process.env.GOOGLE_MAPS_PLATFORM_KEY : '') ||
+  (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
+  (globalThis as any).GOOGLE_MAPS_PLATFORM_KEY ||
+  '';
+const MAPS_KEY_VALID = Boolean(MAPS_KEY) && MAPS_KEY !== 'YOUR_API_KEY' && MAPS_KEY.length > 10;
+
 interface TripsPageProps {
   currentTrip?: TripBrief;
   onViewChange?: (view: 'plan' | 'trips' | 'explore') => void;
   onShare?: (trip: any) => void;
+  onLoadTrip?: (tripId: string) => void;
 }
 
-export default function TripsPage({ currentTrip, onViewChange, onShare }: TripsPageProps) {
+export default function TripsPage({ currentTrip, onViewChange, onShare, onLoadTrip }: TripsPageProps) {
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'past' | 'draft'>('all');
+
+  // Open a trip: load its authored dataset if we have one (Kyoto / Iceland),
+  // otherwise just switch to the planner.
+  const openTrip = (tripId: string) => {
+    if (onLoadTrip) onLoadTrip(tripId);
+    else if (onViewChange) onViewChange('plan');
+  };
   const [searchQuery, setSearchQuery] = useState('');
 
   const liveDraft = useMemo(() => {
@@ -111,9 +129,7 @@ export default function TripsPage({ currentTrip, onViewChange, onShare }: TripsP
                   <TripArchiveCard 
                     key={trip.id} 
                     trip={trip} 
-                    onClick={() => {
-                      if (onViewChange) onViewChange('plan');
-                    }}
+                    onClick={() => openTrip(trip.id)}
                     onShare={onShare}
                   />
                 ))}
@@ -126,9 +142,10 @@ export default function TripsPage({ currentTrip, onViewChange, onShare }: TripsP
               <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Past Trips</h2>
               <div className="space-y-4">
                 {completed.map(trip => (
-                  <TripArchiveCard 
-                    key={trip.id} 
-                    trip={trip} 
+                  <TripArchiveCard
+                    key={trip.id}
+                    trip={trip}
+                    onClick={() => openTrip(trip.id)}
                     onShare={onShare}
                   />
                 ))}
@@ -144,9 +161,7 @@ export default function TripsPage({ currentTrip, onViewChange, onShare }: TripsP
                   <TripArchiveCard 
                     key={trip.id} 
                     trip={trip} 
-                    onClick={() => {
-                      if (onViewChange) onViewChange('plan');
-                    }}
+                    onClick={() => openTrip(trip.id)}
                     onShare={onShare}
                   />
                 ))}
@@ -178,6 +193,7 @@ export default function TripsPage({ currentTrip, onViewChange, onShare }: TripsP
 
         {/* Real Google Map for Archive */}
         <div className="flex-1 w-full bg-[#eef2f8] animate-fadeIn">
+          {MAPS_KEY_VALID ? (
           <Map
             defaultCenter={{ lat: 30, lng: 130 }}
             defaultZoom={3}
@@ -187,11 +203,11 @@ export default function TripsPage({ currentTrip, onViewChange, onShare }: TripsP
             internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
           >
             <MapBoundsFitter points={mapPoints} />
-            
+
             {allTrips.map((trip) => {
               const coords = cityCoords[trip.destination.split(',')[0].trim()];
               if (!coords) return null;
-              
+
               const isUpcoming = trip.status === 'upcoming';
               return (
                 <AdvancedMarker key={trip.id} position={coords}>
@@ -207,6 +223,13 @@ export default function TripsPage({ currentTrip, onViewChange, onShare }: TripsP
               );
             })}
           </Map>
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center text-center p-8 text-slate-400">
+              <Globe className="w-10 h-10 mb-3 opacity-60" />
+              <p className="text-sm font-bold text-slate-500">Archive map preview</p>
+              <p className="text-xs mt-1 max-w-[220px]">Add a Google Maps key to view your trips on the globe.</p>
+            </div>
+          )}
         </div>
 
         <div className="absolute bottom-6 left-6 pointer-events-none">

@@ -25,6 +25,7 @@ import ShareModal from './ShareModal';
 import { AppState, CopilotMessage, PlaceItem, ItineraryItem, RevisionDelta } from '@/shared/types/index';
 import { INITIAL_TRIP_BRIEF, INITIAL_DAYS, INITIAL_ITINERARY_ITEMS, INITIAL_POCKET, INITIAL_BOOKINGS, INITIAL_REVISION_DELTAS, INITIAL_MESSAGES } from '@/shared/mock-data/seedData';
 import { loadJSON, saveJSON, pocketKey } from '@/shared/utils/persistence';
+import { getTrip } from '@/shared/mock-data/trips';
 import { getLocalCopilotResponse } from '@/modules/copilot/localResponses';
 
 // Safely resolve the Google Maps API Key from multiple potential environment sources
@@ -969,6 +970,29 @@ function AppContent() {
     handleSendMessage(command);
   };
 
+  // Switch the active trip to an authored dataset (Kyoto, Iceland, …) and open the planner.
+  // Pocket is rehydrated per-trip from storage, falling back to the trip's seed pocket.
+  const handleLoadTrip = (tripId: string) => {
+    const t = getTrip(tripId);
+    if (!t) {
+      setAppState(prev => ({ ...prev, currentView: 'plan' }));
+      return;
+    }
+    setAppState(prev => ({
+      ...prev,
+      tripBrief: t.tripBrief,
+      itineraryDays: t.itineraryDays,
+      itineraryItems: t.itineraryItems,
+      pocket: loadJSON(pocketKey(t.tripBrief.id), t.pocket),
+      bookings: t.bookings,
+      revisionDeltas: t.revisionDeltas,
+      selectedItemId: undefined,
+      selectedDayId: t.itineraryDays[0]?.id ?? prev.selectedDayId,
+      currentView: 'plan',
+    }));
+    setMessages(t.messages);
+  };
+
   return (
     <div className="w-full h-screen font-sans flex flex-col bg-background selection:bg-primary/20 selection:text-primary">
         {/* Upper Navigation Rail */}
@@ -979,6 +1003,7 @@ function AppContent() {
           onViewChange={(view) => setAppState(prev => ({ ...prev, currentView: view }))}
           pool={placeItemsToPool(appState.pocket, { scheduledIds: appState.itineraryItems.map(i => i.id) })}
           onGenerated={handleGenerated}
+          onLoadTrip={handleLoadTrip}
         />
 
         {/* Adaptive Mobile Workspace Navigation Tab bar */}
@@ -1024,10 +1049,11 @@ function AppContent() {
         <main className="flex-1 w-full flex overflow-hidden p-2 gap-0 relative">
           {appState.currentView === 'trips' ? (
             <div className="absolute inset-0 z-20 bg-background p-2 animate-fadeIn">
-              <TripsPage 
-                currentTrip={appState.tripBrief} 
+              <TripsPage
+                currentTrip={appState.tripBrief}
                 onViewChange={(view) => setAppState(prev => ({ ...prev, currentView: view }))}
                 onShare={handleOpenShare}
+                onLoadTrip={handleLoadTrip}
               />
             </div>
           ) : appState.currentView === 'explore' ? (

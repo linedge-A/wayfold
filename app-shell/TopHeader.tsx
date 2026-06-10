@@ -15,6 +15,7 @@ interface TopHeaderProps {
   onViewChange: (view: 'plan' | 'trips' | 'explore' | 'pocket') => void;
   pool?: EngineItem[];                       // candidate pool for generation (from the Research Pocket)
   onGenerated?: (result: any) => void;       // generated proposal → App state
+  onLoadTrip?: (tripId: string) => void;     // switch the active trip (used by the Trips page, not the header)
 }
 
 export default function TopHeader({ onToggleViewSheet, showComponentSheet, currentView, onViewChange, pool, onGenerated }: TopHeaderProps) {
@@ -29,17 +30,18 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
   return (
     <header className="flex justify-between items-center px-3 w-full h-[48px] bg-white border-b border-border-subtle shrink-0">
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => onViewChange('plan')}>
+        <div className="flex items-center gap-2 cursor-pointer" onClick={() => onViewChange('explore')}>
           <span className="font-brand text-2xl font-bold tracking-[-0.03em] text-primary lowercase">WAYFOLD</span>
         </div>
         <nav className="hidden md:flex items-center gap-4 h-full">
-          <button 
+          <button
             onClick={() => onViewChange('explore')}
             className={`text-sm font-medium hover:bg-surface-container-low transition-all px-2.5 h-full cursor-pointer flex items-center ${currentView === 'explore' ? 'text-primary font-bold border-b-2 border-primary' : 'text-on-surface-variant'}`}
           >
             Explore
           </button>
-          
+
+          {/* Folder = the global Research Pocket board (Agent 5 / PR #28). */}
           <button
             onClick={() => onViewChange('pocket')}
             className={`text-sm font-medium hover:bg-surface-container-low transition-all px-2.5 h-full cursor-pointer flex items-center ${currentView === 'pocket' ? 'text-primary font-bold border-b-2 border-primary' : 'text-on-surface-variant'}`}
@@ -47,9 +49,11 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
             Folder
           </button>
 
+          {/* Trips owns the active plan: a plan IS a trip being viewed, so 'plan' lights up Trips.
+              Trip switching lives on the Trips page (onLoadTrip), not a header dropdown. */}
           <button
             onClick={() => onViewChange('trips')}
-            className={`text-sm font-medium hover:bg-surface-container-low transition-all px-2.5 h-full cursor-pointer flex items-center ${currentView === 'trips' ? 'text-primary font-bold border-b-2 border-primary' : 'text-on-surface-variant'}`}
+            className={`text-sm font-medium hover:bg-surface-container-low transition-all px-2.5 h-full cursor-pointer flex items-center ${currentView === 'trips' || currentView === 'plan' ? 'text-primary font-bold border-b-2 border-primary' : 'text-on-surface-variant'}`}
           >
             Trips
           </button>
