@@ -44,6 +44,17 @@ app.post('/api/copilot', async (req, res) => {
   const currentItems = appState?.itineraryItems || [];
   const norm = (query || '').toLowerCase();
 
+  // A pasted booking confirmation is parsed DETERMINISTICALLY (never sent to the model) so it
+  // commits as a locked anchor via the client's applyBookings wiring. Booking-text → bookings;
+  // blog/place text falls through to the normal flow below.
+  try {
+    const ing = dispatchIngestion({ surface: 'copilot-paste', content: 'text', rawText: String(query || ''), areaHint: appState?.tripBrief?.destination || '' });
+    if (ing.bookings.length) {
+      const sug = toSuggestion(ing);
+      return res.json({ message: sug.message, suggestion: sug.suggestion, bookings: ing.bookings, candidates: ing.candidates });
+    }
+  } catch { /* fall through to the normal copilot flow */ }
+
   // If live AI is ready, process through gemini-flash-latest
   if (ai) {
     try {

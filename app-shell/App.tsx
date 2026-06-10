@@ -10,6 +10,8 @@ import { APIProvider, useMapsLibrary } from '@vis.gl/react-google-maps';
 // ...
 import TopHeader from './TopHeader';
 import { placeItemsToPool } from '@/modules/trip-brief/placeItemsToPool';
+import { applyBookings } from '@/modules/ingestion/applyBookings';
+import { regenerateFromPocket } from '@/modules/trip-brief/regenerateFromPocket';
 import ItineraryPanel from '@/modules/itinerary/ItineraryPanel';
 import MapPanel from '@/modules/map/MapPanel';
 import PocketPanel from '@/modules/pocket/PocketPanel';
@@ -153,6 +155,9 @@ function AppContent() {
   const [showComponentSheet, setShowComponentSheet] = useState<boolean>(false);
   const [messages, setMessages] = useState<CopilotMessage[]>(INITIAL_MESSAGES);
   const [isCopilotLoading, setIsCopilotLoading] = useState<boolean>(false);
+  // Staged copilot itinerary/pocket edits keyed by AI message id — reviewed + confirmed via the
+  // CopilotPanel tiered "Apply" card (#27) instead of auto-applying.
+  const [pendingChanges, setPendingChanges] = useState<Record<string, { updatedItems?: ItineraryItem[]; updatedPocket?: any[]; deltas?: RevisionDelta[] }>>({});
 
   // Optimization Modal state hooks
   const [optimizingItem, setOptimizingItem] = useState<PlaceItem | null>(null);
@@ -781,6 +786,20 @@ function AppContent() {
     };
 
     setMessages(prev => [...prev, freshUserMsg]);
+
+    // Quick command: "regenerate" / "re-plan" → re-plan from the Research Pocket (keepAll),
+    // keeping fixed bookings/pins in place. Handled client-side; no API round-trip. (#23)
+    if (/\b(regenerate|re-?plan|rebuild (the )?(plan|trip|itinerary))\b/i.test(text)) {
+      handleRegenerate();
+      setMessages(prev => [...prev, {
+        id: 'ai-regen-' + Date.now(),
+        sender: 'ai',
+        text: 'Re-planned your trip from the Research Pocket — booked and pinned stops stayed exactly where they were, everything else re-timed around them, and anything that no longer fit went back to your pocket.',
+        timestamp: 'Just now',
+      }]);
+      return;
+    }
+
     setIsCopilotLoading(true);
 
     try {
@@ -806,18 +825,25 @@ function AppContent() {
 
         setMessages(prev => [...prev, freshAIMsg]);
 
-        if (payload.updatedItems || payload.updatedPocket) {
+        // A pasted confirmation surfaces parsed bookings — commit them immediately as locked
+        // anchors via applyBookings (#17/#20). Cancellations unlock + flag a re-plan.
+        if (Array.isArray(payload.bookings) && payload.bookings.length) {
           setAppState(prev => {
-            const nextState = {
-              ...prev,
-              ...(payload.updatedItems && { itineraryItems: payload.updatedItems }),
-              ...(payload.updatedPocket && { pocket: payload.updatedPocket })
-            };
-            if (payload.deltas) {
-              nextState.revisionDeltas = [...payload.deltas, ...prev.revisionDeltas];
-            }
-            return nextState;
+            const r = applyBookings(
+              { bookings: prev.bookings, itineraryItems: prev.itineraryItems, days: prev.itineraryDays, tripStartDate: prev.tripBrief.startDate },
+              payload.bookings
+            );
+            return { ...prev, bookings: r.bookings, itineraryItems: r.itineraryItems, revisionDeltas: [...r.deltas, ...prev.revisionDeltas] };
           });
+        }
+
+        // Itinerary/pocket edits are STAGED (not auto-applied) so the user can review them in the
+        // copilot's tiered "Apply changes / removal" card (#27) and confirm via onApplyChange.
+        if (payload.updatedItems || payload.updatedPocket || (payload.deltas && payload.deltas.length)) {
+          setPendingChanges(prev => ({
+            ...prev,
+            [freshAIMsg.id]: { updatedItems: payload.updatedItems, updatedPocket: payload.updatedPocket, deltas: payload.deltas },
+          }));
         }
       } else {
         throw new Error('API server failed');
@@ -849,6 +875,52 @@ function AppContent() {
     } finally {
       setIsCopilotLoading(false);
     }
+  };
+
+  // Apply a STAGED copilot change set (#27 tiered apply): commit the proposed items/pocket/deltas,
+  // then clear it so the card collapses. (Applies the snapshot captured when the reply arrived.)
+  const handleApplyChange = (msgId: string) => {
+    const pc = pendingChanges[msgId];
+    if (!pc) return;
+    setAppState(prev => {
+      const next: AppState = { ...prev };
+      if (pc.updatedItems) next.itineraryItems = pc.updatedItems as ItineraryItem[];
+      if (pc.updatedPocket) next.pocket = pc.updatedPocket as any;
+      if (pc.deltas && pc.deltas.length) next.revisionDeltas = [...pc.deltas, ...prev.revisionDeltas];
+      return next;
+    });
+    setPendingChanges(prev => { const n = { ...prev }; delete n[msgId]; return n; });
+  };
+
+  // Regenerate the trip from the current board + fresh Research Pocket, keeping locked/pinned items
+  // byte-for-byte (regenerateFromPocket → keepAll); overflow returns to the pocket. (#23)
+  const handleRegenerate = () => {
+    setAppState(prev => {
+      const res = regenerateFromPocket({
+        board: prev.itineraryItems as any,
+        pocket: prev.pocket,
+        dayIds: prev.itineraryDays.map(d => d.id),
+        brief: { style: prev.tripBrief.style },
+      });
+      const scheduled = res.itineraryItems as unknown as ItineraryItem[];
+      const scheduledIds = new Set(scheduled.map(i => i.id));
+      // Overflow → back into the pocket columns by category; never wipe un-scheduled saved items.
+      const nextPocket = prev.pocket.map(col => {
+        const overflowForCol = res.pocket.filter((p: any) =>
+          (col.id === 'food-drink' ? p.category === 'food' : p.category !== 'food') && !scheduledIds.has(p.id));
+        const kept = col.items.filter(p => !scheduledIds.has(p.id));
+        const added = overflowForCol.filter((p: any) => !kept.some(e => e.id === p.id));
+        return { ...col, items: [...kept, ...added] as PlaceItem[] };
+      });
+      const fixed = scheduled.filter(i => (i as any).pinState === 'hard' || (i as any).reservationBound).length;
+      const delta: RevisionDelta = {
+        id: 'delta-regen-' + Date.now(),
+        type: 'move',
+        itemTitle: `Regenerated ${prev.itineraryDays.length}-day plan`,
+        note: `Re-planned around ${fixed} fixed item(s); ${res.pocket.length} returned to pocket.`,
+      };
+      return { ...prev, itineraryItems: scheduled, pocket: nextPocket, revisionDeltas: [delta, ...prev.revisionDeltas] };
+    });
   };
 
   const handleApplySug = (msgId: string) => {
@@ -1231,6 +1303,8 @@ function AppContent() {
               onApplyPreset={handleApplyPreset}
               onRevertDelta={handleRevertDelta}
               onApplySug={handleApplySug}
+              pendingChanges={pendingChanges}
+              onApplyChange={handleApplyChange}
             />
           </div>
           </>
