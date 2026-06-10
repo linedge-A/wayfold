@@ -11,7 +11,9 @@ import { ItineraryItem, PlaceItem } from '@/shared/types/index';
 interface MapPanelProps {
   items: ItineraryItem[];
   selectedItemId?: string;
+  hoveredItemId?: string;
   onSelectItem?: (id: string | undefined) => void;
+  onHoverItem?: (id: string | undefined) => void;
   pocketItems?: PlaceItem[];
 }
 
@@ -118,7 +120,7 @@ function SelectionPanner({ target }: { target: google.maps.LatLngLiteral | null 
   return null;
 }
 
-export default function MapPanel({ items, selectedItemId, onSelectItem, pocketItems }: MapPanelProps) {
+export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelectItem, onHoverItem, pocketItems }: MapPanelProps) {
   // Filter active day itinerary items (filter out lodging/airport transit from primary route connections if desired, or keep classic ones)
   const mapItems = items
     .filter(item => item.category !== 'stay' && item.category !== 'transit')
@@ -217,7 +219,8 @@ export default function MapPanel({ items, selectedItemId, onSelectItem, pocketIt
           {/* Active itinerary points on the map */}
           {mapItems.map((item) => {
             const isSelected = selectedItemId === item.id;
-            const categoryColor = item.category === 'food' ? '#F2994A' : 
+            const isHovered = hoveredItemId === item.id;
+            const categoryColor = item.category === 'food' ? '#F2994A' :
                                 item.category === 'sight' ? '#2F80ED' :
                                 item.category === 'stay' ? '#9B51E0' :
                                 item.category === 'transit' ? '#27AE60' : '#3B82F6';
@@ -228,20 +231,25 @@ export default function MapPanel({ items, selectedItemId, onSelectItem, pocketIt
                 position={item.latLng}
                 onClick={() => onSelectItem?.(isSelected ? undefined : item.id)}
               >
-                <div className="relative" style={{ width: '36px', height: '36px' }}>
+                <div
+                  className="relative"
+                  style={{ width: '36px', height: '36px' }}
+                  onMouseEnter={() => onHoverItem?.(item.id)}
+                  onMouseLeave={() => onHoverItem?.(undefined)}
+                >
                   {isSelected && (
-                    <div 
-                      className="absolute inset-0 w-9 h-9 rounded-full animate-ping -translate-x-[2px] -translate-y-[2px]" 
+                    <div
+                      className="absolute inset-0 w-9 h-9 rounded-full animate-ping -translate-x-[2px] -translate-y-[2px]"
                       style={{ backgroundColor: `${categoryColor}33` }}
                     />
                   )}
                   <div
                     className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm border-[3px] shadow-lg transition-all duration-150 bg-white ${
-                      isSelected ? 'scale-110' : 'hover:scale-105'
+                      isSelected ? 'scale-110' : isHovered ? 'scale-110 ring-2 ring-primary/50' : 'hover:scale-105'
                     }`}
-                    style={{ 
+                    style={{
                       borderColor: categoryColor,
-                      color: categoryColor 
+                      color: categoryColor
                     }}
                   >
                     {item.indexOrder}

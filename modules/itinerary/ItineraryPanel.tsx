@@ -209,9 +209,11 @@ interface ItineraryPanelProps {
   days: ItineraryDay[];
   items: ItineraryItem[];
   selectedItemId?: string;
+  hoveredItemId?: string;
   viewType: 'day' | 'week' | 'month';
   focusMode: boolean;
   onSelectItem: (id: string | undefined) => void;
+  onHoverItem?: (id: string | undefined) => void;
   onSelectDay: (id: string) => void;
   onTogglePin: (id: string) => void;
   onToggleLock: (id: string) => void;
@@ -228,9 +230,11 @@ export default function ItineraryPanel({
   days,
   items,
   selectedItemId,
+  hoveredItemId,
   viewType,
   focusMode,
   onSelectItem,
+  onHoverItem,
   onSelectDay,
   onTogglePin,
   onToggleLock,
@@ -799,6 +803,7 @@ export default function ItineraryPanel({
                 <div className="absolute top-0 bottom-0 left-10 right-0 pointer-events-none">
                   {positionedTimedItems.map(({ item, top, height, colIndex }) => {
                     const isSelected = selectedItemId === item.id;
+                    const isHovered = hoveredItemId === item.id;
                     const styles = getCategoryCardStyles(item.category, isSelected);
                     const topVal = Math.max(0, Math.min(top, (END_HOUR - START_HOUR + 1) * HOUR_HEIGHT - height));
                     const isDraggingThis = draggingItemId === item.id;
@@ -816,6 +821,8 @@ export default function ItineraryPanel({
                           zIndex: isSelected ? 30 : 10 + colIndex,
                         }}
                         onClick={() => onSelectItem(isSelected ? undefined : item.id)}
+                        onMouseEnter={() => onHoverItem?.(item.id)}
+                        onMouseLeave={() => onHoverItem?.(undefined)}
                         draggable
                         onDragStart={(e) => {
                           setDraggingItemId(item.id);
@@ -838,7 +845,8 @@ export default function ItineraryPanel({
                           isDraggingThis ? 'pointer-events-none opacity-40 select-none' :
                           isDraggingOther ? 'pointer-events-none opacity-30 select-none' : 'pointer-events-auto cursor-grab active:cursor-grabbing hover:scale-[1.005] hover:shadow'
                         } p-1.5 rounded-r-xl border transition-all group flex flex-col justify-between ${styles.bg} ${styles.border} ${styles.borderLeft} ${
-                          isSelected ? 'ring-1 ring-primary/25 shadow-md scale-[1.01]' : 'shadow-sm'
+                          isSelected ? 'ring-1 ring-primary/25 shadow-md scale-[1.01]'
+                            : isHovered ? 'ring-1 ring-primary/40 shadow-md' : 'shadow-sm'
                         }`}
                       >
                         <div className="flex flex-col h-full justify-between">

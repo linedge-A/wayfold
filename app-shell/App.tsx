@@ -236,10 +236,16 @@ function AppContent() {
   const currentDay = appState.itineraryDays.find(d => d.id === appState.selectedDayId) || appState.itineraryDays[0];
   const activeDayItems = appState.itineraryItems.filter(item => item.dayId === appState.selectedDayId);
 
+  // Hover is kept out of appState so a mousemove over the calendar/map doesn't re-render
+  // the whole trip state — only the two panels that read hoveredItemId update.
+  const [hoveredItemId, setHoveredItemId] = useState<string | undefined>(undefined);
+
   // Handlers
   const handleSelectItem = (id: string | undefined) => {
     setAppState(prev => ({ ...prev, selectedItemId: id }));
   };
+
+  const handleHoverItem = (id: string | undefined) => setHoveredItemId(id);
 
   const handleSelectDay = (id: string) => {
     setAppState(prev => ({ ...prev, selectedDayId: id }));
@@ -997,9 +1003,11 @@ function AppContent() {
                 days={appState.itineraryDays}
                 items={appState.itineraryItems}
                 selectedItemId={appState.selectedItemId}
+                hoveredItemId={hoveredItemId}
                 viewType={viewType}
                 focusMode={focusMode}
                 onSelectItem={handleSelectItem}
+                onHoverItem={handleHoverItem}
                 onSelectDay={handleSelectDay}
                 onTogglePin={handleTogglePin}
                 onToggleLock={handleToggleLock}
@@ -1022,9 +1030,11 @@ function AppContent() {
                 days={appState.itineraryDays}
                 items={appState.itineraryItems}
                 selectedItemId={appState.selectedItemId}
+                hoveredItemId={hoveredItemId}
                 viewType={viewType}
                 focusMode={focusMode}
                 onSelectItem={handleSelectItem}
+                onHoverItem={handleHoverItem}
                 onSelectDay={handleSelectDay}
                 onTogglePin={handleTogglePin}
                 onToggleLock={handleToggleLock}
@@ -1072,7 +1082,9 @@ function AppContent() {
                     <MapPanel
                       items={activeDayItems}
                       selectedItemId={appState.selectedItemId}
+                      hoveredItemId={hoveredItemId}
                       onSelectItem={handleSelectItem}
+                      onHoverItem={handleHoverItem}
                       pocketItems={appState.pocket.flatMap(col => col.items)}
                     />
                   </div>
