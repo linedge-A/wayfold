@@ -52,7 +52,7 @@ export interface EngineItem {
 }
 
 export interface PlannerInput {
-  brief: { style?: string; persona?: Persona };
+  brief: { style?: string; persona?: Persona; interests?: string[]; keepAll?: boolean };
   dayIds: string[];
   pool: EngineItem[]; // bookings, pinned items, and flexible candidates together
 }
@@ -79,8 +79,23 @@ const dwell = (it: EngineItem, persona: Persona): number => {
   const base = it.estimatedDurationMin || (classOf(it) === 'corridor' ? 15 : CATEGORY_TYP[it.category || ''] || 60);
   return Math.max(it.minDwell || 5, Math.round(base * (DWELL_FACTOR[persona] ?? 1)));
 };
-const score = (it: EngineItem) =>
-  (PRIORITY_W[it.priority || ''] ?? 2) * 2 + (ROLE_W[it.tripRole || ''] ?? 2) + (VERDICT_W[String(sig(it).verdict)] ?? 0);
+// Remembered-interest prior (from AGENTS.md, passed via brief.interests). Ingestion tags items
+// with the same canonical vocabulary (food-market, zen, walking…), so this is mostly a tag-set
+// intersection with a light title/category fallback. Capped so it nudges, never overrides a hard
+// signal (verdict/pin).
+const interestBoost = (it: EngineItem, interests?: string[]): number => {
+  if (!interests || !interests.length) return 0;
+  const tags: string[] = ((it as any).tags || []).map((t: string) => String(t).toLowerCase());
+  const hay = `${it.title || ''} ${(it as any).subCategory || ''} ${it.category || ''}`.toLowerCase();
+  let hits = 0;
+  for (const i of interests) {
+    const k = i.toLowerCase();
+    if (tags.includes(k) || hay.includes(k.replace(/-/g, ' '))) hits++;
+  }
+  return Math.min(hits, 2) * 3; // +3 per match, capped at +6
+};
+const score = (it: EngineItem, interests?: string[]) =>
+  (PRIORITY_W[it.priority || ''] ?? 2) * 2 + (ROLE_W[it.tripRole || ''] ?? 2) + (VERDICT_W[String(sig(it).verdict)] ?? 0) + interestBoost(it, interests);
 const slotOf = (it: EngineItem): keyof typeof SLOT_CENTER => {
   const bt = String(sig(it).bestTime || '').toLowerCase();
   if (it.category === 'food') return /breakfast|brunch|morning/.test(bt) ? 'am' : 'dinner';
@@ -126,6 +141,8 @@ export function generateItinerary(input: PlannerInput): PlannerResult {
   const flags: string[] = [], notes: string[] = [];
   const persona = (input.brief.persona || 'default') as Persona;
   const style = input.brief.style || 'balanced';
+  const interests = input.brief.interests;
+  const keepAll = !!input.brief.keepAll; // re-optimize a curated itinerary: re-time/re-order, never drop
   const pace = Math.max(2, Math.min(6, (PACE_BY_STYLE[style] ?? 4) + (PERSONA_PACE_DELTA[persona] ?? 0)));
   const days = input.dayIds;
 
@@ -138,7 +155,7 @@ export function generateItinerary(input: PlannerInput): PlannerResult {
     .forEach(it => notes.push(`dropped (verdict:skip): ${it.title}`));
   const flexible = input.pool
     .filter(it => lockednessOf(it) === 'flexible' && sig(it).verdict !== 'skip')
-    .sort((a, b) => score(b) - score(a) || (a.title || '').localeCompare(b.title || ''));
+    .sort((a, b) => score(b, interests) - score(a, interests) || (a.title || '').localeCompare(b.title || ''));
 
   locked.forEach(l => notes.push(`locked${l.cancelable === true ? ' (cancellable)' : ''}: ${l.title} @ ${l.startTime} [${l.dayId}]`));
 
@@ -163,7 +180,7 @@ export function generateItinerary(input: PlannerInput): PlannerResult {
       const matches = days.filter(x => themeArea[x] === it.area);
       d = (matches.length ? matches : days.slice()).sort((a, b) => destCount[a] - destCount[b])[0]; // slice: never sort input.dayIds
     }
-    if (!guaranteed && classOf(it) !== 'corridor' && destCount[d] >= pace) {
+    if (!guaranteed && !keepAll && classOf(it) !== 'corridor' && destCount[d] >= pace) {
       const alt = days.filter(x => destCount[x] < pace).sort((a, b) => destCount[a] - destCount[b])[0];
       if (alt) d = alt; else return false; // no room as a destination on any day
     }
@@ -190,7 +207,7 @@ export function generateItinerary(input: PlannerInput): PlannerResult {
     }
 
     // queue: earliest preferred window first, then highest value (musts/high-value win the slot)
-    const q = wishlist[d].slice().sort((a, b) => prefCenter(a) - prefCenter(b) || score(b) - score(a));
+    const q = wishlist[d].slice().sort((a, b) => prefCenter(a) - prefCenter(b) || score(b, interests) - score(a, interests));
     let cursor = DAY_START;
     let prevItem: EngineItem | null = null;
     // Place the first queued item (slot/value order) that fits the current window AND is open;

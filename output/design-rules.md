@@ -123,8 +123,8 @@ Typography must meet WCAG-friendly sizing and contrast expectations for producti
 
 ### Font family
 - Primary UI font: `Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`
-- Use one font family only for MVP to prevent drift.
-- No decorative display font.
+- Use one UI font family only (Inter) for all product surfaces to prevent drift.
+- **Brand wordmark exception**: the `wayfold` logo wordmark (top header + share card only) uses the brand display font **DM Sans**, exposed as the `--font-brand` token and the `font-brand` Tailwind utility. Style: bold (700), lowercase, tight tracking (`-0.03em`). This is the single sanctioned display font and the only allowed exception to "one font family." Do **not** apply `font-brand` to any product UI text (titles, chips, body, labels).
 
 ### Font tiers
 - `Tier 1 / Page title`: 24px / 32px line height / 600 weight
@@ -668,7 +668,7 @@ The implementation is acceptable only if all are true:
 If a designer or engineer is unsure what to do, default to this:
 - calm neutral surface
 - blue primary accent
-- Inter only
+- Inter only (sole exception: `DM Sans` for the `wayfold` brand wordmark via `font-brand`)
 - 14px body
 - 16px panels
 - 14px chip radius

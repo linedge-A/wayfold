@@ -29,7 +29,7 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
     <header className="flex justify-between items-center px-3 w-full h-[48px] bg-white border-b border-border-subtle shrink-0">
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => onViewChange('plan')}>
-          <span className="text-2xl font-bold tracking-[-0.03em] text-primary lowercase" style={{ fontFamily: "'DM Sans', var(--font-sans)" }}>WAYFOLD</span>
+          <span className="font-brand text-2xl font-bold tracking-[-0.03em] text-primary lowercase">WAYFOLD</span>
         </div>
         <nav className="hidden md:flex items-center gap-4 h-full">
           <button 
@@ -46,7 +46,7 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
                 isPlanOpen || currentView === 'plan' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:text-primary'
               }`}
             >
-              Plan
+              Folder
               <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isPlanOpen ? 'rotate-180' : ''}`} />
             </button>
 
