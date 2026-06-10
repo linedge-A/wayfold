@@ -7,6 +7,7 @@ import React, { useState, useEffect, FormEvent, DragEvent } from 'react';
 import { Calendar, Pin, Lock, MapPin, Clock, Plus, Trash2, ShieldCheck, ChevronLeft, ChevronRight, Menu, ChevronDown, X, Car, ExternalLink, Sparkles, Share2 } from 'lucide-react';
 import { ItineraryDay, ItineraryItem } from '@/shared/types/index';
 import GooglePlaceDetailsCard from '@/shared/utils/GooglePlaceDetailsCard';
+import { haversineKm } from '@/shared/utils/geo';
 
 
 const PushPinIcon = ({ className, pinned }: { className?: string; pinned: boolean }) => {
@@ -87,15 +88,10 @@ const getDistanceAndDuration = (item1: any, item2: any) => {
     return { distance: '0.2 km', durationMin: 3, mode: 'driving' };
   }
 
-  // Haversine distance formula
-  const R = 6371; // km
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  let distanceKm = R * c;
+  // Great-circle distance via the shared geo primitive (single source of truth — shared/utils/geo).
+  // The undefined-coord guards above mean a finite number here; the >100km sanitize below still
+  // catches normalized map-space placeholder coords (per the PR #16 fix).
+  let distanceKm = haversineKm({ lat: lat1, lng: lng1 }, { lat: lat2, lng: lng2 }) ?? 0;
 
   // Sanitize extreme / layout coordinate placements to keep Kyoto values pristine
   if (distanceKm > 100) {
