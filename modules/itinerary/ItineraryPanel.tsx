@@ -947,7 +947,7 @@ export default function ItineraryPanel({
                 {showAddForm && (() => {
                   const newTimeMinutes = parseTimeToMinutes(newTime);
                   const minutesClamp = Math.max(START_MINUTES, Math.min((END_HOUR + 1) * 60, newTimeMinutes));
-                  const formTop = (minutesClamp - START_MINUTES) * MINUTE_HEIGHT;
+                  let formTop = (minutesClamp - START_MINUTES) * MINUTE_HEIGHT;
 
                   // Adjust the overlay upward slightly if it's too close to the end of the day, to keep it within view
                   const containerMaxHeight = (END_HOUR - START_HOUR + 1) * HOUR_HEIGHT;
