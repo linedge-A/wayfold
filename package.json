@@ -9,7 +9,7 @@
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx tests/contracts/brand-font.test.ts"
+    "test": "tsx tests/contracts/brand-font.test.ts && tsx tests/contracts/booking-record.test.ts && tsx tests/contracts/iceland-trip.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
