@@ -14,9 +14,10 @@
  *   ✓ heuristic NL parsing for the common confirmation shapes
  *   ✓ booking-vs-blog classifier (so the copilot paste path routes here, not to the blog extractor)
  *   ✓ mapper that uses ONLY existing BookingRecord/ItineraryItem fields → no contract change needed
- *   ⟂ deferred to P1: schema.org JSON-LD extraction, Gemini fallback, cancellation/update handling
- *      (richer fields — status, tz, from/to, ISO datetimes — await the Agent 9 contract proposal in
- *       output/contract-proposal-bookingrecord.md; until then they ride along in `note`)
+ *   ✓ first-class BookingRecord fields (status, vendor, from/to, ISO datetimes, seat/room, party,
+ *      price, sourceEmailId) populated per the contract extension (PR #7) — no more `note` stuffing
+ *   ⟂ deferred to P1: schema.org JSON-LD extraction, Gemini fallback, cancellation/update handling,
+ *      and timezone/offset resolution (startISO is naive-local for now)
  */
 import type { BookingRecord, ItineraryItem } from '../../shared/types/index';
 
@@ -185,7 +186,7 @@ export function parseBookingText(text: string): ParsedBooking | null {
   }
   const vendor = text.match(/\b(ANA|JAL|United|Delta|British Airways|Lufthansa|Booking\.com|Airbnb|Hertz|Avis|Eurostar|Amtrak|Marriott|Hilton)\b/i)?.[1];
   const party = text.match(PARTY)?.[1];
-  const price = text.match(MONEY)?.[1];
+  const price = text.match(MONEY)?.[1]?.replace(/[.\s]+$/, ''); // drop trailing sentence punctuation
   const cancelable = /\b(free\s+cancellation|cancel(?:lable)?\s+(?:until|free)|fully\s+refundable)\b/i.test(text) ? true
     : /\b(non-?refundable|no\s+cancellation|cannot\s+be\s+cancel)\b/i.test(text) ? false : undefined;
 
@@ -219,32 +220,59 @@ const ITEM_CAT: Record<BookingType, ItineraryItem['category']> = {
   flight: 'transit', rail: 'transit', car: 'transit', lodging: 'stay', restaurant: 'food', activity: 'sight', ticket: 'sight',
 };
 
-/** ParsedBooking → { BookingRecord, reservationBound ItineraryItem[] }, using only existing fields. */
+// Local datetime string ("YYYY-MM-DD HH:MM AM/PM") → naive ISO ("YYYY-MM-DDTHH:MM:00").
+// No offset is emitted at P0 (we don't resolve tz yet); `timezone` is left undefined and a later
+// pass can attach the IANA zone + offset. Date-only input returns the bare date.
+const to24h = (t?: string): string | undefined => {
+  if (!t) return undefined;
+  const m = t.trim().toUpperCase().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/);
+  if (!m) return undefined;
+  let h = +m[1]; if (m[3] === 'PM' && h < 12) h += 12; if (m[3] === 'AM' && h === 12) h = 0;
+  return `${pad(h)}:${m[2]}`;
+};
+const toISO = (dtLocal?: string): string | undefined => {
+  if (!dtLocal) return undefined;
+  const [d, ...rest] = dtLocal.split(' ');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return undefined;
+  const hm = to24h(rest.join(' '));
+  return hm ? `${d}T${hm}:00` : d;
+};
+
+/**
+ * ParsedBooking → { BookingRecord, reservationBound ItineraryItem[] }.
+ * Populates the first-class BookingRecord fields added by the contract extension (PR #7) —
+ * no more stuffing detail into `note`. Honours the contract invariants:
+ *   confirmed === (status === 'confirmed')   ·   linkedItemId === linkedItemIds[0]
+ */
 export function toArtifacts(pb: ParsedBooking): BookingArtifacts {
   const itemId = `place-${pb.sourceEmailId}`;
   const seg = pb.segments[0];
+  const lastSeg = pb.segments[pb.segments.length - 1];
   const [date, ...t] = (seg.start.dateTimeLocal || '').split(' ');
   const time = t.join(' ') || undefined;
-
-  // richer-than-contract details preserved in `note` until the schema proposal lands (Agent 9)
-  const noteBits = [
-    pb.vendor && `vendor: ${pb.vendor}`,
-    seg.label && `ref: ${seg.label}`,
-    seg.start.code && (seg.end?.code ? `${seg.start.code}→${seg.end.code}` : seg.start.code),
-    pb.party && `party ${pb.party}`,
-    pb.price && pb.price,
-    pb.status !== 'confirmed' && `status: ${pb.status}`,
-  ].filter(Boolean).join(' · ');
+  const seatOrRoom = pb.raw?.match(/\bseat\s+([0-9]{1,3}[A-Z]?)\b/i)?.[1]
+    || pb.raw?.match(/\b((?:Deluxe|Standard|Twin|Double|King|Queen|Suite)(?:\s+\w+){0,2}\s+room)\b/i)?.[1];
 
   const record: BookingRecord = {
     id: `booking-${pb.sourceEmailId}`,
     title: pb.title,
     category: CAT_FOR[pb.type],
     confirmationCode: pb.locator,
-    confirmed: pb.status === 'confirmed',
+    status: pb.status,
+    confirmed: pb.status === 'confirmed',          // invariant: confirmed === (status === 'confirmed')
     cancelable: pb.cancelable,
-    linkedItemId: itemId,
+    linkedItemId: itemId,                          // back-compat; equals linkedItemIds[0]
+    linkedItemIds: [itemId],
     date, time,
+    startISO: toISO(seg.start.dateTimeLocal),
+    endISO: toISO(lastSeg.end?.dateTimeLocal),
+    from: seg.start.code || seg.start.place,
+    to: lastSeg.end?.code || lastSeg.end?.place,
+    seatOrRoom,
+    vendor: pb.vendor,
+    party: pb.party,
+    price: pb.price,
+    sourceEmailId: pb.sourceEmailId,
   };
 
   const item = {
@@ -259,7 +287,6 @@ export function toArtifacts(pb: ParsedBooking): BookingArtifacts {
     tripRole: 'anchor' as const,
     reservationBound: true as const,
     sourceType: 'email' as const,
-    note: noteBits || undefined,
   } as ItineraryItem & { sourceType: 'email'; reservationBound: true };
 
   return { record, items: [item] };
