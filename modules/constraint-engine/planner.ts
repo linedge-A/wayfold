@@ -66,7 +66,7 @@ export interface PlannerResult {
 
 const DWELL_FACTOR: Record<Persona, number> = { family: 1.3, couple: 1.1, default: 1.0, friends: 1.0, solo: 0.85 };
 const CATEGORY_TYP: Record<string, number> = { sight: 75, food: 75, stay: 60, transit: 30 };
-const DAY_START = 9 * 60, DAY_END = 22 * 60; // 9am–10pm window (room for dinners / night markets)
+const DAY_START = 9 * 60, DAY_END = 22 * 60, LATE_END = 24 * 60; // 9am–10pm window; LATE_END lets aurora/night experiences run to midnight
 const SLOT_CENTER = { am: 10 * 60, lunch: 12 * 60 + 30, pm: 15 * 60, dinner: 19 * 60 } as const;
 const PRIORITY_W: Record<string, number> = { must: 4, high: 3, medium: 2, low: 1 };
 const ROLE_W: Record<string, number> = { anchor: 3, supporting: 2, optional: 1 };
@@ -113,20 +113,51 @@ const transitMinutes = (from: EngineItem | null, to: EngineItem): number => {
 };
 const arrivalOverhead = (to: EngineItem): number =>
   (to.needsParking ? 10 : 0) + (to.ticketed ? (to.queueMin ?? 15) : 0);
-// Opening hours are a HARD window (the existing `hard` time-tier) — this is what makes a night
-// market land at night and a place that closes at 6pm not get snapped to 7pm.
-const openWindow = (it: EngineItem): [number, number] => parseHours(it.openingHours) ?? [DAY_START, DAY_END];
+// Best-time → an evening CENTER for the moments that must happen late. Drives queue order, and
+// (via timeFloor) holds the item out of the early afternoon. Morning/early need no floor — queue
+// order + opening hours already pull them first.
+const BESTTIME_CENTER: { re: RegExp; t: number }[] = [
+  { re: /aurora/, t: 20 * 60 },
+  { re: /sunset|golden/, t: 18 * 60 + 30 },
+  { re: /night/, t: 19 * 60 },
+  { re: /evening/, t: 18 * 60 + 30 },
+  { re: /sunrise|early|morning/, t: 9 * 60 + 30 },
+];
+// Opening hours are a HARD window — what makes a night market land at night and a 6pm-close place
+// not get snapped to 7pm. Aurora/night/sunset experiences with no stated hours may run past the
+// normal 10pm window, so widen their close to midnight.
+const openWindow = (it: EngineItem): [number, number] => {
+  const h = parseHours(it.openingHours);
+  if (h) return h;
+  return /aurora|night|sunset/.test(String(sig(it).bestTime || '').toLowerCase()) ? [DAY_START, LATE_END] : [DAY_START, DAY_END];
+};
 const mealCenter = (it: EngineItem): number => {
   const bt = String(sig(it).bestTime || '').toLowerCase();
-  if (/breakfast|brunch/.test(bt)) return 8 * 60 + 30;
-  if (/dinner|evening|night/.test(bt)) return 19 * 60;
+  if (/breakfast|brunch|morning|sunrise/.test(bt)) return 8 * 60 + 30;       // incl. "morning" → early
+  if (/dinner|evening|night|sunset/.test(bt)) return 19 * 60;                 // incl. "sunset" → evening
   if (/lunch|midday|noon/.test(bt)) return 12 * 60 + 30;
   const [open, close] = openWindow(it);                                     // else derive from when it's open
   if (open >= 16 * 60) return Math.max(19 * 60, open + 15);                 // opens in the evening → dinner/night
   if (close <= 15 * 60) return open <= 9 * 60 ? 8 * 60 + 30 : 12 * 60 + 30; // morning / lunch-only
   return 12 * 60 + 30;                                                       // spans midday → lunch
 };
-const prefCenter = (it: EngineItem): number => it.category === 'food' ? mealCenter(it) : SLOT_CENTER[slotOf(it)];
+// The time a stop "wants" (queue ordering): food → meal time; else its best-time center or am/pm slot.
+const timeCenter = (it: EngineItem): number => {
+  if (it.category === 'food') return mealCenter(it);
+  const bt = String(sig(it).bestTime || '').toLowerCase();
+  for (const { re, t } of BESTTIME_CENTER) if (re.test(bt)) return t;
+  return SLOT_CENTER[slotOf(it)];
+};
+// Earliest a stop may START. Meals get their meal floor; late-anchored moments (sunset/aurora/
+// night/evening) get an evening floor so they're never swept into midday. Everything else: none.
+const timeFloor = (it: EngineItem): number => {
+  if (it.category === 'food') return mealCenter(it);
+  const bt = String(sig(it).bestTime || '').toLowerCase();
+  if (/aurora/.test(bt)) return 20 * 60;
+  if (/sunset|golden|night|evening/.test(bt)) return 18 * 60 + 30;
+  return 0;
+};
+const prefCenter = (it: EngineItem): number => timeCenter(it);
 
 type Lock = 'locked' | 'mustkeep' | 'flexible';
 const lockednessOf = (it: EngineItem): Lock => {
@@ -220,8 +251,7 @@ export function generateItinerary(input: PlannerInput): PlannerResult {
           const it = q[i];
           const dur = dwell(it, persona);
           const [open, close] = openWindow(it);
-          let start = Math.max(cursor + transitMinutes(prevItem, it) + arrivalOverhead(it), open); // never before it opens
-          if (it.category === 'food') start = Math.max(start, mealCenter(it));                     // prefer meal time
+          const start = Math.max(cursor + transitMinutes(prevItem, it) + arrivalOverhead(it), open, timeFloor(it)); // not before it opens / its best-time floor
           if (start + dur <= Math.min(limit, close)) {                                              // fits AND still open
             scheduled.push({ ...it, dayId: d, startTime: fmtT(start), endTime: fmtT(start + dur) });
             cursor = start + dur; prevItem = it; q.splice(i, 1); placed = true; break;
@@ -235,7 +265,7 @@ export function generateItinerary(input: PlannerInput): PlannerResult {
       scheduled.push({ ...l, endTime: l.endTime || fmtT(le) });
       cursor = Math.max(cursor, le); prevItem = l;
     }
-    flush(DAY_END);
+    flush(LATE_END);                               // normal stops still capped at their close (DAY_END); only late items use the extra
     for (const it of q) {                          // anything left didn't fit the day
       if (lockednessOf(it) === 'mustkeep') flags.push(`⚠ pinned "${it.title}" couldn't fit ${d} — moved to pocket`);
       overflow.push(it);
