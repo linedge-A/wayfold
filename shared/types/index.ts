@@ -65,11 +65,42 @@ export interface BookingRecord {
   title: string;
   category: 'hotel' | 'restaurant' | 'ticket' | 'transport';
   confirmationCode?: string;
+  /**
+   * Canonical binary confirmation flag — retained as-is for existing consumers.
+   * When `status` is also present, the invariant is `confirmed === (status === 'confirmed')`.
+   */
   confirmed: boolean;
   cancelable?: boolean;
+  /** @deprecated Prefer `linkedItemIds`. Kept for back-compat; equals `linkedItemIds[0]` when both are set. */
   linkedItemId?: string;
   date?: string;
   time?: string;
+
+  // ── Extended fields for parsed bookings (ingestion, PR #5). All optional & additive. ──
+  /** Richer lifecycle state. A 'cancelled'/'changed' booking should drive a PLAN_REVISED re-plan. */
+  status?: 'confirmed' | 'cancelled' | 'changed' | 'pending';
+  /** Provider / brand, e.g. "ANA", "Booking.com". */
+  vendor?: string;
+  /** One booking may anchor several itinerary blocks (multi-leg flight, multi-night stay). */
+  linkedItemIds?: string[];
+  /** ISO 8601 incl. offset — lossless for red-eyes, timezones, and multi-day stays. */
+  startISO?: string;
+  /** ISO 8601 incl. offset (checkout / flight arrival / rail arrival). */
+  endISO?: string;
+  /** IANA timezone, e.g. "Asia/Tokyo". */
+  timezone?: string;
+  /** Transport origin (IATA code / station / airport). */
+  from?: string;
+  /** Transport destination (IATA code / station / airport). */
+  to?: string;
+  /** Seat or room label, e.g. "32A" / "Deluxe King". */
+  seatOrRoom?: string;
+  /** Party size — pax / guests / covers. */
+  party?: number;
+  /** Display price string, e.g. "¥18,400". */
+  price?: string;
+  /** hash(vendor + locator + segment) — idempotent re-import + cancellation match by (vendor, confirmationCode). */
+  sourceEmailId?: string;
 }
 
 export interface RevisionDelta {
