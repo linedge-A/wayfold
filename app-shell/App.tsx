@@ -27,11 +27,17 @@ import ShareModal from './ShareModal';
 import { AppState, CopilotMessage, PlaceItem, ItineraryItem, RevisionDelta } from '@/shared/types/index';
 import { INITIAL_TRIP_BRIEF, INITIAL_DAYS, INITIAL_ITINERARY_ITEMS, INITIAL_POCKET, INITIAL_BOOKINGS, INITIAL_REVISION_DELTAS, INITIAL_MESSAGES } from '@/shared/mock-data/seedData';
 import { loadJSON, saveJSON, pocketKey } from '@/shared/utils/persistence';
+import { generateFakePocket } from '@/modules/pocket/devFakePocket';
 import { getTrip } from '@/shared/mock-data/trips';
 import { getLocalCopilotResponse } from '@/modules/copilot/localResponses';
 
 import ErrorBoundary from './ErrorBoundary';
 import { API_KEY, IS_VALID_KEY } from './mapsKey';
+
+// DEV stress-test hook: `?fake=N` loads N generated places (all categories, random coords) into
+// the pocket for browse/filter testing. Generates NO API calls and (below) does NOT persist,
+// so the real saved pocket is left untouched. Off (0) for any normal load.
+const FAKE_N = typeof window !== 'undefined' ? (Number(new URLSearchParams(window.location.search).get('fake')) || 0) : 0;
 
 export default function App() {
   return (
@@ -52,7 +58,7 @@ function AppContent() {
     itineraryItems: INITIAL_ITINERARY_ITEMS,
     // Hydrate the Research Pocket from localStorage (per trip) so saved POIs cumulate
     // across sessions; fall back to the seed pocket on first run / unavailable storage.
-    pocket: loadJSON(pocketKey(INITIAL_TRIP_BRIEF.id), INITIAL_POCKET),
+    pocket: FAKE_N > 0 ? generateFakePocket(FAKE_N) : loadJSON(pocketKey(INITIAL_TRIP_BRIEF.id), INITIAL_POCKET),
     bookings: INITIAL_BOOKINGS,
     selectedDayId: 'day-3', // Default to Wednesday 14th to match premium screenshot
     selectedItemId: undefined,
@@ -63,6 +69,7 @@ function AppContent() {
   // Persist the Research Pocket per trip so saved POIs survive reloads and stay scoped to
   // their trip. (Hydration happens in the initial state above.)
   useEffect(() => {
+    if (FAKE_N > 0) return; // stress-test data is ephemeral — never overwrite the real saved pocket
     saveJSON(pocketKey(appState.tripBrief.id), appState.pocket);
   }, [appState.pocket, appState.tripBrief.id]);
 
