@@ -57,15 +57,6 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
           >
             Trips
           </button>
-
-          <button
-            onClick={() => setIsInitiateModalOpen(true)}
-            className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg bg-primary text-white hover:bg-accent-primary-hover transition-colors cursor-pointer shadow-sm"
-            title="Plan a new trip"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Plan new trip
-          </button>
           {onToggleViewSheet && (
             <button
               onClick={onToggleViewSheet}
@@ -82,6 +73,14 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
       </div>
 
       <div className="flex items-center gap-3">
+        <button
+          onClick={() => setIsInitiateModalOpen(true)}
+          className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg bg-primary text-white hover:bg-accent-primary-hover transition-colors cursor-pointer shadow-sm"
+          title="Plan a new trip"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Plan new trip
+        </button>
         <div className="flex gap-1.5">
           <button className="p-1.5 hover:bg-surface-container-low rounded-full text-secondary hover:text-primary transition-colors relative cursor-pointer">
             <Bell className="w-4.5 h-4.5" />
