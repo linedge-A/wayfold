@@ -162,5 +162,5 @@ export interface AppState {
   selectedItemId?: string;
   selectedDayId: string; // current active focus day
   revisionDeltas: RevisionDelta[];
-  currentView: 'plan' | 'trips' | 'explore';
+  currentView: 'plan' | 'trips' | 'explore' | 'pocket'; // 'pocket' = global Research Pocket board (Agent 9 approved, additive)
 }

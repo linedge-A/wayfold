@@ -20,6 +20,7 @@ import { optimizeSchedule, OptimizationResult, ProposedChange } from '@/modules/
 import OptimizeScheduleModal from '@/modules/constraint-engine/OptimizeScheduleModal';
 import TripsPage from './TripsPage';
 import ExplorePage from './ExplorePage';
+import PocketBoardPage from './PocketBoardPage';
 import ShareModal from './ShareModal';
 import { AppState, CopilotMessage, PlaceItem, ItineraryItem, RevisionDelta } from '@/shared/types/index';
 import { INITIAL_TRIP_BRIEF, INITIAL_DAYS, INITIAL_ITINERARY_ITEMS, INITIAL_POCKET, INITIAL_BOOKINGS, INITIAL_REVISION_DELTAS, INITIAL_MESSAGES } from '@/shared/mock-data/seedData';
@@ -1021,8 +1022,21 @@ function AppContent() {
             </div>
           ) : appState.currentView === 'explore' ? (
             <div className="absolute inset-0 z-20 bg-background p-2 animate-fadeIn">
-              <ExplorePage 
+              <ExplorePage
                 onViewChange={(view) => setAppState(prev => ({ ...prev, currentView: view }))}
+              />
+            </div>
+          ) : appState.currentView === 'pocket' ? (
+            <div className="absolute inset-0 z-20 bg-background p-2 animate-fadeIn">
+              <PocketBoardPage
+                pocket={appState.pocket}
+                selectedItemId={appState.selectedItemId}
+                onSelectItem={handleSelectItem}
+                onAddPocketItem={handleAddPocketItem}
+                onPromoteItem={handlePromotePocketItem}
+                onClearAll={handleClearAllPocket}
+                onRemovePocketItem={handleRemovePocketItem}
+                onAskCopilot={() => setAppState(prev => ({ ...prev, currentView: 'plan' }))}
               />
             </div>
           ) : (
