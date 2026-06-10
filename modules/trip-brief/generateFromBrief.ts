@@ -18,7 +18,8 @@
  * places the still-unassigned candidates around them.
  */
 import { generateItinerary, type EngineItem, type Persona } from '../constraint-engine/planner.ts';
-import { haversineKm } from '../constraint-engine/primitives.ts';
+import { haversineKm } from '../../shared/utils/geo';
+import { paceFor } from '../../shared/constants/pacing';
 
 // Local mirrors of the contracts.md shapes — kept here so the module carries no dependency on the
 // Agent-9 protected shared/types. A real TripBrief / ItineraryItem is structurally assignable.
@@ -54,12 +55,8 @@ export interface GenerateOptions {
 }
 
 const MS_DAY = 86_400_000;
-
-// Pace mirrors planner.ts (destinations/day) so Tier-1 fills a day to the same cap the engine uses.
-const PACE_BY_STYLE: Record<string, number> = { relaxing: 3, luxury: 3, balanced: 4, budget: 4, intense: 5 };
-const PERSONA_PACE_DELTA: Record<string, number> = { family: -1, couple: 0, solo: 0, friends: 1, default: 0 };
-const paceFor = (style = 'balanced', persona = 'default'): number =>
-  Math.max(2, Math.min(6, (PACE_BY_STYLE[style] ?? 4) + (PERSONA_PACE_DELTA[persona] ?? 0)));
+// Pace (destinations/day) comes from the shared source of truth so Tier-1 fills a day to the exact
+// same cap the engine uses — they can no longer drift. See shared/constants/pacing.ts.
 
 // Light value score (priority + blog verdict) for ordering areas/items in Tier-1.
 const PRIORITY_W: Record<string, number> = { must: 4, high: 3, medium: 2, low: 1 };

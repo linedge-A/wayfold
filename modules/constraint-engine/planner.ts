@@ -19,6 +19,7 @@
  * day's pace cap, shed first — unless pinned, which promotes it to mustkeep.
  */
 import { parseClock as parseT, fromMinutes as fmtT, haversineKm, parseHours } from './primitives';
+import { paceFor } from '../../shared/constants/pacing';
 
 export type Persona = 'family' | 'friends' | 'couple' | 'solo' | 'default';
 export type StopClass = 'anchor' | 'destination' | 'corridor';
@@ -63,8 +64,6 @@ export interface PlannerResult {
   notes: string[];
 }
 
-const PACE_BY_STYLE: Record<string, number> = { relaxing: 3, luxury: 3, balanced: 4, budget: 4, intense: 5 };
-const PERSONA_PACE_DELTA: Record<Persona, number> = { family: -1, couple: 0, solo: 0, friends: +1, default: 0 };
 const DWELL_FACTOR: Record<Persona, number> = { family: 1.3, couple: 1.1, default: 1.0, friends: 1.0, solo: 0.85 };
 const CATEGORY_TYP: Record<string, number> = { sight: 75, food: 75, stay: 60, transit: 30 };
 const DAY_START = 9 * 60, DAY_END = 22 * 60; // 9am–10pm window (room for dinners / night markets)
@@ -143,7 +142,7 @@ export function generateItinerary(input: PlannerInput): PlannerResult {
   const style = input.brief.style || 'balanced';
   const interests = input.brief.interests;
   const keepAll = !!input.brief.keepAll; // re-optimize a curated itinerary: re-time/re-order, never drop
-  const pace = Math.max(2, Math.min(6, (PACE_BY_STYLE[style] ?? 4) + (PERSONA_PACE_DELTA[persona] ?? 0)));
+  const pace = paceFor(style, persona);
   const days = input.dayIds;
 
   if (!days.length) return { scheduled: [], overflow: [...input.pool], flags: ['⚠ no days provided'], notes };

@@ -20,6 +20,7 @@
  *      and timezone/offset resolution (startISO is naive-local for now)
  */
 import type { BookingRecord, ItineraryItem } from '../../shared/types/index';
+import { parseClock, fromMinutes24, pad } from '../../shared/utils/temporal';
 
 export type BookingType = 'flight' | 'lodging' | 'rail' | 'restaurant' | 'car' | 'activity' | 'ticket';
 
@@ -81,7 +82,6 @@ export function looksLikeBooking(text: string): boolean {
 
 // ── date/time helpers ─────────────────────────────────────────────────────────
 const MONTHS: Record<string, number> = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
-const pad = (n: number) => String(n).padStart(2, '0');
 
 /** Best-effort date → ISO 'YYYY-MM-DD'. Handles "April 15, 2026", "15 Apr 2026", "2026-04-15", "15/04/2026". */
 function parseDate(s: string): string | undefined {
@@ -223,12 +223,11 @@ const ITEM_CAT: Record<BookingType, ItineraryItem['category']> = {
 // Local datetime string ("YYYY-MM-DD HH:MM AM/PM") → naive ISO ("YYYY-MM-DDTHH:MM:00").
 // No offset is emitted at P0 (we don't resolve tz yet); `timezone` is left undefined and a later
 // pass can attach the IANA zone + offset. Date-only input returns the bare date.
+// Local time string → 24-hour "HH:MM" via the shared clock parser (reuses parseClock + fromMinutes24
+// instead of re-deriving the AM/PM math here). Returns undefined when there is no parseable time.
 const to24h = (t?: string): string | undefined => {
-  if (!t) return undefined;
-  const m = t.trim().toUpperCase().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/);
-  if (!m) return undefined;
-  let h = +m[1]; if (m[3] === 'PM' && h < 12) h += 12; if (m[3] === 'AM' && h === 12) h = 0;
-  return `${pad(h)}:${m[2]}`;
+  const mins = parseClock(t);
+  return mins == null ? undefined : fromMinutes24(mins);
 };
 const toISO = (dtLocal?: string): string | undefined => {
   if (!dtLocal) return undefined;
