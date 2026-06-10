@@ -29,7 +29,7 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
     <header className="flex justify-between items-center px-3 w-full h-[48px] bg-white border-b border-border-subtle shrink-0">
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => onViewChange('plan')}>
-          <span className="text-xl font-black tracking-tighter text-primary uppercase">WAYFOLD</span>
+          <span className="text-xl font-bold tracking-[-0.03em] text-primary lowercase" style={{ fontFamily: "'DM Sans', var(--font-sans)" }}>WAYFOLD</span>
         </div>
         <nav className="hidden md:flex items-center gap-4 h-full">
           <button 

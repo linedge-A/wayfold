@@ -205,7 +205,7 @@ export default function ShareModal({ isOpen, onClose, tripData }: ShareModalProp
                     "{personalNote}"
                   </p>
                   <div className="flex justify-between items-center mt-2">
-                    <span className="text-xs font-black tracking-tighter text-primary">WAYFOLD</span>
+                    <span className="text-xs font-bold tracking-[-0.03em] text-primary lowercase" style={{ fontFamily: "'DM Sans', var(--font-sans)" }}>WAYFOLD</span>
                     <div className="bg-slate-50 p-1.5 rounded-lg border border-slate-100">
                       <Instagram className="w-4 h-4 text-slate-300" />
                     </div>
