@@ -4,8 +4,10 @@
  */
 
 import { AppState, ItineraryItem, PocketColumn, BookingRecord, TripArchiveItem } from '@/shared/types/index';
+import { ICELAND_FAMILY_ARCHIVE_ITEM } from '@/shared/mock-data/icelandFamilyTrip';
 
 export const INITIAL_TRIP_ARCHIVE: TripArchiveItem[] = [
+  ICELAND_FAMILY_ARCHIVE_ITEM,
   {
     id: 'trip-archive-1',
     title: 'Neon Nights: Tokyo Tech Tour',
