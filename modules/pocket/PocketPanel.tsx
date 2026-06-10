@@ -7,6 +7,9 @@ import { useState, useMemo } from 'react';
 import { Plus, Compass, Coffee, ListChecks, PlusCircle, Filter, Search, X, MapPin, Star, Clock, Tag } from 'lucide-react';
 import { PocketColumn, PlaceItem } from '@/shared/types/index';
 import GooglePlaceDetailsCard from '@/shared/utils/GooglePlaceDetailsCard';
+// Reuse the tested geo primitive (constraint-engine) rather than reinventing distance.
+// (Longer term this should live in shared/utils so it isn't a cross-module import.)
+import { haversineKm } from '@/modules/constraint-engine/primitives';
 
 
 interface PocketPanelProps {
@@ -18,7 +21,9 @@ interface PocketPanelProps {
   selectedItemId?: string;
   onSelectItem?: (id: string | undefined) => void;
   onDropCalendarItem?: (itemId: string, targetColumnId: string) => void;
-  /** Area of the day currently focused in the planner — used to surface relevant saved POIs. */
+  /** Items scheduled on the focused day — their real areas/coords drive relevance ranking. */
+  focusedDayItems?: PlaceItem[];
+  /** Focused day's theme (areaSummary) — a weak fallback signal when the day is still empty. */
   focusedDayArea?: string;
   /** Label of the focused day (e.g. "Wed 14") for the relevance chip. */
   focusedDayLabel?: string;
@@ -33,6 +38,7 @@ export default function PocketPanel({
   selectedItemId,
   onSelectItem,
   onDropCalendarItem,
+  focusedDayItems,
   focusedDayArea,
   focusedDayLabel
 }: PocketPanelProps) {
@@ -43,15 +49,36 @@ export default function PocketPanel({
   const [onlyRelevant, setOnlyRelevant] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
-  // Relevance: an item is relevant to the focused day when its group/area shares a
-  // word with the day's area. Cheap token overlap — no contract or proximity math needed.
+  // Relevance to the focused day. Prefer real geo-proximity (haversine to the centroid of
+  // the day's scheduled stops); fall back to area/word overlap when coords aren't real yet.
+  // NOTE: seed PlaceItems carry NORMALIZED lat/lng (map-container space), so we only trust
+  // coords inside a plausible geographic range — otherwise the centroid would be garbage.
   const tokenize = (s?: string) => (s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2);
-  const focusTokens = tokenize(focusedDayArea);
-  const hasFocus = focusTokens.length > 0;
+  const isGeo = (p?: { lat?: number; lng?: number }) =>
+    !!p && p.lat != null && p.lng != null && Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180 && Math.abs(p.lng) > 90;
+  const NEAR_KM = 3;
+
+  const dayItems = focusedDayItems || [];
+  // Reference area vocabulary: the day's actual scheduled stops' areas, plus the theme as a weak hint.
+  const refTokens = new Set<string>();
+  for (const it of dayItems) tokenize(`${it.group || ''} ${it.area || ''}`).forEach(t => refTokens.add(t));
+  tokenize(focusedDayArea).forEach(t => refTokens.add(t));
+  // Geo centroid from the day's stops that have *real* coordinates.
+  const geoPts = dayItems.filter(isGeo);
+  const centroid = geoPts.length
+    ? { lat: geoPts.reduce((s, p) => s + (p.lat as number), 0) / geoPts.length,
+        lng: geoPts.reduce((s, p) => s + (p.lng as number), 0) / geoPts.length }
+    : null;
+
+  const hasFocus = refTokens.size > 0 || centroid != null;
   const isRelevant = (item: PlaceItem) => {
-    if (!hasFocus) return false;
+    if (centroid && isGeo(item)) {
+      const km = haversineKm(item, centroid);
+      if (km != null) return km <= NEAR_KM;
+    }
+    if (!refTokens.size) return false;
     const hay = tokenize(`${item.group || ''} ${item.area || ''}`);
-    return focusTokens.some(t => hay.includes(t));
+    return hay.some(t => refTokens.has(t));
   };
   const [showAddView, setShowAddView] = useState(false);
   
@@ -169,7 +196,7 @@ export default function PocketPanel({
       if (sortBy === 'rating') return (b.rating || 0) - (a.rating || 0);
       return 0;
     });
-  }, [pocket, activeCategory, searchQuery, sortBy, onlyRelevant, hasFocus, focusedDayArea]);
+  }, [pocket, activeCategory, searchQuery, sortBy, onlyRelevant, hasFocus, focusedDayArea, focusedDayItems]);
 
   const displayColumns = useMemo(() => {
     // Group by area / day cluster: build columns dynamically from item.group (falling back to area)
@@ -206,7 +233,7 @@ export default function PocketPanel({
       title: activeCategory === 'food-drink' ? 'Food & Drink' : 'Must See',
       items: allItems
     }];
-  }, [pocket, allItems, activeCategory, groupBy, hasFocus, focusedDayArea]);
+  }, [pocket, allItems, activeCategory, groupBy, hasFocus, focusedDayArea, focusedDayItems]);
 
   return (
     <section className="flex-1 bg-white border border-border-subtle rounded-2xl overflow-hidden shadow-sm flex flex-col min-h-[160px]">

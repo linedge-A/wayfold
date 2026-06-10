@@ -1088,6 +1088,7 @@ function AppContent() {
                     selectedItemId={appState.selectedItemId}
                     onSelectItem={handleSelectItem}
                     onDropCalendarItem={handleDropCalendarItemToPocket}
+                    focusedDayItems={activeDayItems}
                     focusedDayArea={currentDay?.areaSummary}
                     focusedDayLabel={currentDay ? `${currentDay.label} ${currentDay.date}` : undefined}
                   />
