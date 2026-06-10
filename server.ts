@@ -8,6 +8,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import { extractCandidates } from './modules/ingestion/extractCandidates';
+import { dispatchIngestion, toSuggestion } from './modules/ingestion/dispatchIngestion';
 
 dotenv.config();
 
@@ -412,6 +413,68 @@ app.post('/api/copilot', async (req, res) => {
       actionLabel: 'Add to Thursday'
     }
   });
+});
+
+// AI place-extraction fallback — reuses the SAME `ai` client as /api/copilot (no second client).
+// Only called when the deterministic core finds nothing.
+async function geminiExtractPlaces(text: string): Promise<any[]> {
+  if (!ai || !text) return [];
+  const systemInstruction = `Extract up to 8 real, named places (restaurants, sights, cafes, hotels) from the text.
+Return ONLY a JSON array: [{ "title": string, "category": "food"|"sight"|"stay", "area": string, "tags": string[] }]. No prose.`;
+  try {
+    const r = await ai.models.generateContent({
+      model: process.env.GEMINI_FLASH_MODEL || 'gemini-flash-latest',
+      contents: String(text).slice(0, 2000),
+      config: { systemInstruction, temperature: 0 },
+    });
+    const m = (r.text || '').match(/\[[\s\S]*\]/);
+    const arr = m ? JSON.parse(m[0]) : [];
+    return Array.isArray(arr)
+      ? arr.map((p: any, i: number) => ({
+          id: `place-ai-${Date.now()}-${i}`,
+          title: p.title,
+          category: p.category === 'food' || p.category === 'stay' ? p.category : 'sight',
+          area: p.area || '',
+          tags: Array.isArray(p.tags) ? p.tags : [],
+          sourceType: 'ai',
+        })).filter((p: any) => p.title)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+// Surface-agnostic ingestion endpoint. The copilot paste path, a forward-to-inbox webhook, and the
+// future Chrome extension all POST an IngestionRequest here. Runs the shared deterministic core
+// (dispatchIngestion — the SAME parsers the client uses); only on no deterministic hit does it fall
+// back to the AI extractor above. Returns bookings (→ applyBookings) + place candidates (→ Pocket).
+app.post('/api/ingest', async (req, res) => {
+  const request = req.body?.request || req.body || {};
+  let result;
+  try {
+    result = dispatchIngestion(request);
+  } catch {
+    return res.status(400).json({ message: 'Invalid ingestion request.' });
+  }
+
+  if (result.bookings.length || result.candidates.length) {
+    const sug = toSuggestion(result);
+    return res.json({ message: sug.message, suggestion: sug.suggestion, bookings: result.bookings, candidates: result.candidates });
+  }
+
+  if (request.rawText) {
+    const aiPlaces = await geminiExtractPlaces(request.rawText).catch(() => []);
+    if (aiPlaces.length) {
+      return res.json({
+        message: `Extracted ${aiPlaces.length} place${aiPlaces.length === 1 ? '' : 's'} with AI assist — staged in your Pocket.`,
+        suggestion: { type: 'Smart Add', title: `Import ${aiPlaces.length} places`, description: 'AI-extracted from your text.', actionLabel: `Add ${aiPlaces.length} to Pocket`, itemsToAdd: aiPlaces },
+        candidates: aiPlaces,
+        bookings: [],
+      });
+    }
+  }
+
+  return res.json({ message: result.warnings[0] || 'No bookings or places found.', bookings: [], candidates: [] });
 });
 
 // Configure Vite middleware in development, serve compiled SPA assets in production
