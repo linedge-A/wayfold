@@ -4,7 +4,7 @@
  */
 
 // ... (keep initial comments)
-import React, { useState, useEffect, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, useMemo, Component, ErrorInfo, ReactNode } from 'react';
 import { Sparkles, Map, Bot, Compass, Plus, ShieldAlert, Calendar, AlertTriangle } from 'lucide-react';
 import { APIProvider, useMapsLibrary } from '@vis.gl/react-google-maps';
 // ...
@@ -269,7 +269,17 @@ function AppContent() {
 
   // Computed Lookups
   const currentDay = appState.itineraryDays.find(d => d.id === appState.selectedDayId) || appState.itineraryDays[0];
-  const activeDayItems = appState.itineraryItems.filter(item => item.dayId === appState.selectedDayId);
+  // Memoized so MapPanel/ItineraryPanel receive a stable array identity when the data is unchanged —
+  // prevents the map's bounds-fit/polyline effects from re-firing on unrelated App re-renders.
+  const activeDayItems = useMemo(
+    () => appState.itineraryItems.filter(item => item.dayId === appState.selectedDayId),
+    [appState.itineraryItems, appState.selectedDayId]
+  );
+  // Flattened pocket POIs for the map — memoized for the same stable-identity reason.
+  const pocketMapItems = useMemo(
+    () => appState.pocket.flatMap(col => col.items),
+    [appState.pocket]
+  );
 
   // Hover is kept out of appState so a mousemove over the calendar/map doesn't re-render
   // the whole trip state — only the two panels that read hoveredItemId update.
@@ -1122,7 +1132,7 @@ function AppContent() {
                       hoveredItemId={hoveredItemId}
                       onSelectItem={handleSelectItem}
                       onHoverItem={handleHoverItem}
-                      pocketItems={appState.pocket.flatMap(col => col.items)}
+                      pocketItems={pocketMapItems}
                     />
                   </div>
 
