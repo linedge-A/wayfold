@@ -7,6 +7,7 @@ import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
+import { extractCandidates } from './modules/ingestion/extractCandidates';
 
 dotenv.config();
 
@@ -142,6 +143,28 @@ app.post('/api/copilot', async (req, res) => {
   const hasPlacesQuery = norm.includes('places') || norm.includes('spot') || norm.includes('best') || norm.includes('top') || norm.includes('restaurant') || norm.includes('eat') || norm.includes('food') || norm.includes('blog') || norm.includes('list') || norm.includes('museum') || norm.includes('screenshot');
 
   if (hasUrl || hasPlacesQuery) {
+    // Reuse the shared deterministic ingestion core (the SAME parser the client and the future
+    // Chrome extension use) to extract REAL places from the actual pasted text/URL — instead of
+    // returning canned placeholders. Falls back to the demo set only when nothing extracts
+    // (e.g. a bare "best food" command with no place names to parse).
+    const realPlaces = extractCandidates({
+      rawText: String(query || ''),
+      sourceType: 'blog',
+      areaHint: appState?.tripBrief?.destination || '',
+    });
+    if (realPlaces.length) {
+      return res.json({
+        message: `I extracted **${realPlaces.length}** place${realPlaces.length === 1 ? '' : 's'} from your text — verdicts and best-time tags came along. Import them into your Research Pocket with one click.`,
+        suggestion: {
+          type: 'Smart Add',
+          title: `Import ${realPlaces.length} place${realPlaces.length === 1 ? '' : 's'}`,
+          description: 'Extracted from your link/text by the shared ingestion parser.',
+          actionLabel: `Add ${realPlaces.length} to Pocket`,
+          itemsToAdd: realPlaces,
+        },
+      });
+    }
+
     let suggestedPlaces = [];
     let messageText = "";
     let titleText = "";
