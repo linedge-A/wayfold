@@ -7,9 +7,9 @@ import { useState, useMemo } from 'react';
 import { Plus, Compass, Coffee, ListChecks, PlusCircle, Filter, Search, X, MapPin, Star, Clock, Tag } from 'lucide-react';
 import { PocketColumn, PlaceItem } from '@/shared/types/index';
 import GooglePlaceDetailsCard from '@/shared/utils/GooglePlaceDetailsCard';
-// Reuse the tested geo primitive (constraint-engine) rather than reinventing distance.
-// (Longer term this should live in shared/utils so it isn't a cross-module import.)
-import { haversineKm } from '@/modules/constraint-engine/primitives';
+// Reuse the shared geo primitive rather than reinventing distance (now promoted to shared/utils
+// per #12, so this is no longer a cross-module import into the constraint engine).
+import { haversineKm } from '@/shared/utils/geo';
 
 
 interface PocketPanelProps {
