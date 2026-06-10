@@ -49,13 +49,17 @@ export default function PocketPanel({
   const [onlyRelevant, setOnlyRelevant] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
-  // Relevance to the focused day. Prefer real geo-proximity (haversine to the centroid of
-  // the day's scheduled stops); fall back to area/word overlap when coords aren't real yet.
-  // NOTE: seed PlaceItems carry NORMALIZED lat/lng (map-container space), so we only trust
-  // coords inside a plausible geographic range — otherwise the centroid would be garbage.
+  // Relevance to the focused day. Geo proximity is a POSITIVE signal (a near hit), OR'd with
+  // area/word overlap — never used to NEGATE. So whole-degree normalized/placeholder coords
+  // (always >100km apart, never within NEAR_KM) simply don't geo-match and fall through to the
+  // area tokens, while real-world coords (Iceland, Europe, the Americas — any |lng| ≤ 180) get
+  // true proximity ranking.
   const tokenize = (s?: string) => (s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2);
+  // Plain coordinate validity — NO longitude magic number. Real vs normalized-placeholder coords
+  // can't be told apart by value ((40,35) is both a valid lat/lng and a mock), so we don't try;
+  // the normalized-seed problem is being removed by the constraint-engine real-coords migration.
   const isGeo = (p?: { lat?: number; lng?: number }) =>
-    !!p && p.lat != null && p.lng != null && Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180 && Math.abs(p.lng) > 90;
+    !!p && p.lat != null && p.lng != null && Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180;
   const NEAR_KM = 3;
 
   const dayItems = focusedDayItems || [];
@@ -63,7 +67,7 @@ export default function PocketPanel({
   const refTokens = new Set<string>();
   for (const it of dayItems) tokenize(`${it.group || ''} ${it.area || ''}`).forEach(t => refTokens.add(t));
   tokenize(focusedDayArea).forEach(t => refTokens.add(t));
-  // Geo centroid from the day's stops that have *real* coordinates.
+  // Geo centroid from the day's stops that carry coordinates.
   const geoPts = dayItems.filter(isGeo);
   const centroid = geoPts.length
     ? { lat: geoPts.reduce((s, p) => s + (p.lat as number), 0) / geoPts.length,
@@ -72,10 +76,12 @@ export default function PocketPanel({
 
   const hasFocus = refTokens.size > 0 || centroid != null;
   const isRelevant = (item: PlaceItem) => {
+    // Positive geo hit: within NEAR_KM of the day's centroid (only fires for real-distance coords).
     if (centroid && isGeo(item)) {
       const km = haversineKm(item, centroid);
-      if (km != null) return km <= NEAR_KM;
+      if (km != null && km <= NEAR_KM) return true;
     }
+    // Otherwise fall through to the day's area vocabulary (covers normalized/coordless items).
     if (!refTokens.size) return false;
     const hay = tokenize(`${item.group || ''} ${item.area || ''}`);
     return hay.some(t => refTokens.has(t));
