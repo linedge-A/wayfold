@@ -4,29 +4,26 @@
  */
 
 import { useState } from 'react';
-import { Bell, Settings, ChevronDown, Plus, FileText } from 'lucide-react';
+import { Bell, Settings, Plus } from 'lucide-react';
 import PlanInitiateModal from '@/modules/trip-brief/PlanInitiateModal';
 import type { EngineItem } from '@/modules/constraint-engine/planner';
-import { TRIPS } from '@/shared/mock-data/trips';
 
 interface TopHeaderProps {
   onToggleViewSheet?: () => void;
   showComponentSheet?: boolean;
-  currentView: 'plan' | 'trips' | 'explore';
-  onViewChange: (view: 'plan' | 'trips' | 'explore') => void;
+  currentView: 'plan' | 'trips' | 'explore' | 'pocket';
+  onViewChange: (view: 'plan' | 'trips' | 'explore' | 'pocket') => void;
   pool?: EngineItem[];                       // candidate pool for generation (from the Research Pocket)
   onGenerated?: (result: any) => void;       // generated proposal → App state
-  onLoadTrip?: (tripId: string) => void;     // switch the active trip
+  onLoadTrip?: (tripId: string) => void;     // switch the active trip (used by the Trips page, not the header)
 }
 
-export default function TopHeader({ onToggleViewSheet, showComponentSheet, currentView, onViewChange, pool, onGenerated, onLoadTrip }: TopHeaderProps) {
-  const [isPlanOpen, setIsPlanOpen] = useState(false);
+export default function TopHeader({ onToggleViewSheet, showComponentSheet, currentView, onViewChange, pool, onGenerated }: TopHeaderProps) {
   const [isInitiateModalOpen, setIsInitiateModalOpen] = useState(false);
 
   const handleStartPlanning = (result: any) => {
     onGenerated?.(result);
     setIsInitiateModalOpen(false);
-    setIsPlanOpen(false);
     onViewChange('plan');
   };
 
@@ -37,73 +34,37 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
           <span className="font-brand text-2xl font-bold tracking-[-0.03em] text-primary lowercase">WAYFOLD</span>
         </div>
         <nav className="hidden md:flex items-center gap-4 h-full">
-          <button 
+          <button
             onClick={() => onViewChange('explore')}
             className={`text-sm font-medium hover:bg-surface-container-low transition-all px-2.5 h-full cursor-pointer flex items-center ${currentView === 'explore' ? 'text-primary font-bold border-b-2 border-primary' : 'text-on-surface-variant'}`}
           >
             Explore
           </button>
-          
-          <div className="relative h-full">
-            <button 
-              onClick={() => setIsPlanOpen(!isPlanOpen)}
-              className={`flex items-center gap-1 text-sm font-bold px-2.5 h-full cursor-pointer transition-all ${
-                isPlanOpen || currentView === 'plan' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:text-primary'
-              }`}
-            >
-              Folder
-              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isPlanOpen ? 'rotate-180' : ''}`} />
-            </button>
 
-            {isPlanOpen && (
-              <>
-                <div 
-                  className="fixed inset-0 z-10" 
-                  onClick={() => setIsPlanOpen(false)}
-                />
-                <div className="absolute top-[48px] left-0 w-56 bg-white border border-border-subtle rounded-b-xl shadow-lg z-20 py-2 animate-fadeIn">
-                  <button 
-                    onClick={() => {
-                      setIsInitiateModalOpen(true);
-                      setIsPlanOpen(false);
-                    }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-primary hover:bg-slate-50 transition-colors cursor-pointer group text-left"
-                  >
-                    <div className="w-6 h-6 rounded-lg bg-primary-soft flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-colors">
-                      <Plus className="w-3.5 h-3.5" />
-                    </div>
-                    Plan new trip
-                  </button>
-                  
-                  <div className="mt-2 pt-2 border-t border-border-subtle">
-                    <div className="px-3 pb-1.5 flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Your Trips</span>
-                    </div>
-                    {Object.values(TRIPS).map(t => (
-                      <button
-                        key={t.tripBrief.id}
-                        onClick={() => {
-                          if (onLoadTrip) onLoadTrip(t.tripBrief.id);
-                          else onViewChange('plan');
-                          setIsPlanOpen(false);
-                        }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-on-surface-variant hover:bg-slate-50 transition-colors cursor-pointer text-left"
-                      >
-                        <FileText className="w-3.5 h-3.5 text-slate-300" />
-                        {t.tripBrief.title}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+          {/* Folder = the global Research Pocket board (Agent 5 / PR #28). */}
+          <button
+            onClick={() => onViewChange('pocket')}
+            className={`text-sm font-medium hover:bg-surface-container-low transition-all px-2.5 h-full cursor-pointer flex items-center ${currentView === 'pocket' ? 'text-primary font-bold border-b-2 border-primary' : 'text-on-surface-variant'}`}
+          >
+            Folder
+          </button>
 
-          <button 
+          {/* Trips owns the active plan: a plan IS a trip being viewed, so 'plan' lights up Trips.
+              Trip switching lives on the Trips page (onLoadTrip), not a header dropdown. */}
+          <button
             onClick={() => onViewChange('trips')}
-            className={`text-sm font-medium hover:bg-surface-container-low transition-all px-2.5 h-full cursor-pointer flex items-center ${currentView === 'trips' ? 'text-primary font-bold border-b-2 border-primary' : 'text-on-surface-variant'}`}
+            className={`text-sm font-medium hover:bg-surface-container-low transition-all px-2.5 h-full cursor-pointer flex items-center ${currentView === 'trips' || currentView === 'plan' ? 'text-primary font-bold border-b-2 border-primary' : 'text-on-surface-variant'}`}
           >
             Trips
+          </button>
+
+          <button
+            onClick={() => setIsInitiateModalOpen(true)}
+            className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg bg-primary text-white hover:bg-accent-primary-hover transition-colors cursor-pointer shadow-sm"
+            title="Plan a new trip"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Plan new trip
           </button>
           {onToggleViewSheet && (
             <button

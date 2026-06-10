@@ -12,6 +12,12 @@ interface Note {
   text: string;
 }
 
+interface PendingChange {
+  updatedItems?: unknown[];
+  updatedPocket?: unknown[];
+  deltas?: RevisionDelta[];
+}
+
 interface CopilotPanelProps {
   messages: CopilotMessage[];
   deltas: RevisionDelta[];
@@ -19,7 +25,37 @@ interface CopilotPanelProps {
   onApplyPreset: (command: string) => void;
   onRevertDelta: (deltaId: string) => void;
   onApplySug: (msgId: string) => void;
+  pendingChanges?: Record<string, PendingChange>;
+  onApplyChange?: (msgId: string) => void;
 }
+
+// ── Copilot colour strategy ───────────────────────────────────────────────
+// Bubbles are always neutral (no coloured border). Colour lives only on the
+// action button, escalating with commitment:
+//   neutral  → info / save-to-bucket / destination chips (additive, low stakes)
+//   primary  → confirm adding a NEW stop to the schedule
+//   warning  → changing an existing scheduled item (move / shift)
+//   danger   → removing an existing scheduled item
+type ActionTier = 'neutral' | 'confirm' | 'change' | 'remove';
+const TIER_BTN: Record<ActionTier, string> = {
+  neutral: 'bg-white border border-border-subtle text-on-surface hover:bg-surface-container-low',
+  confirm: 'bg-primary text-white border border-primary hover:bg-accent-primary-hover',
+  change: 'bg-[#D48A00] text-white border border-[#D48A00] hover:bg-[#B87600]',
+  remove: 'bg-[#D64545] text-white border border-[#D64545] hover:bg-[#B53A3A]',
+};
+
+const classifySuggestion = (s: NonNullable<CopilotMessage['suggestion']>): ActionTier => {
+  if (s.itemsToAdd && s.itemsToAdd.length > 0) return 'neutral'; // save to bucket
+  if (s.type === 'Conflict Alert' || s.timeShift || s.type === 'Suggested Adjustment') return 'change';
+  return 'confirm'; // Smart Add of a new stop
+};
+
+const classifyDeltas = (ds?: RevisionDelta[]): ActionTier => {
+  if (!ds || ds.length === 0) return 'confirm';
+  if (ds.some(d => d.type === 'drop')) return 'remove';
+  if (ds.some(d => d.type === 'move' || d.type === 'time-shift')) return 'change';
+  return 'confirm'; // add-only
+};
 
 export default function CopilotPanel({
   messages,
@@ -27,12 +63,14 @@ export default function CopilotPanel({
   onSendMessage,
   onApplyPreset,
   onRevertDelta,
-  onApplySug
+  onApplySug,
+  pendingChanges,
+  onApplyChange
 }: CopilotPanelProps) {
   const [inputText, setInputText] = useState('');
   const [historyHeight, setHistoryHeight] = useState(140);
   const [notesHeight, setNotesHeight] = useState(100);
-  const [isHistoryFolded, setIsHistoryFolded] = useState(false);
+  const [showRevisions, setShowRevisions] = useState(false);
   const [isNotesFolded, setIsNotesFolded] = useState(false);
   const [notes, setNotes] = useState<Note[]>([
     { id: '1', text: 'Check Silver Pavilion accessibility' },
@@ -267,92 +305,72 @@ export default function CopilotPanel({
         )}
       </div>
 
-      {/* Revision Summary Section */}
-      <div className="border-b border-border-subtle bg-white flex flex-col shrink-0 relative">
-        <div
-          onClick={() => setIsHistoryFolded(!isHistoryFolded)}
-          className="flex items-center justify-between px-3 py-2 hover:bg-slate-100/40 cursor-pointer select-none transition-colors"
-          title={isHistoryFolded ? "Click to expand revisions" : "Click to fold revisions"}
-        >
-          <div className="flex items-center gap-2">
-            <History className="w-4 h-4 text-primary" />
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-on-surface">Revision Summary</h3>
-            {deltas.length > 0 && (
-              <span className="bg-primary/10 text-primary px-1.5 py-0.25 rounded-md text-[9px] font-bold">
-                {deltas.length}
-              </span>
-            )}
-          </div>
-          <div className="text-secondary hover:text-primary transition-colors">
-            {isHistoryFolded ? (
-              <ChevronRight className="w-4 h-4" />
-            ) : (
-              <ChevronDown className="w-4 h-4" />
-            )}
-          </div>
-        </div>
-
-        {!isHistoryFolded && (
-          <div className="px-3 pb-3 flex flex-col">
-            {deltas.length > 0 ? (
-              <div
-                style={{ height: `${historyHeight}px` }}
-                className="space-y-2 overflow-y-auto custom-scrollbar pr-0.5 transition-all duration-75"
-              >
-                {deltas.map((delta) => (
-                  <div key={delta.id} className="text-xs bg-white p-2.5 rounded-xl border border-border-subtle flex items-start gap-2 group hover:border-primary/20 transition-all">
-                    <Check className="w-3.5 h-3.5 text-success shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-on-surface leading-normal text-[11px]">
-                        {delta.type === 'move' && 'Moved '}
-                        {delta.type === 'add' && 'Added '}
-                        {delta.type === 'drop' && 'Dropped '}
-                        {delta.type === 'time-shift' && 'Shifted '}
-                        <span className="font-bold">{delta.itemTitle}</span>{' '}
-                        {delta.from && `from ${delta.from} `}
-                        {delta.to && `to ${delta.to}`}
-                      </p>
-                      {delta.note && (
-                        <p className="text-[10px] text-secondary mt-0.5 leading-snug">{delta.note}</p>
-                      )}
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onRevertDelta(delta.id);
-                      }}
-                      title="Revert Change"
-                      className="p-1 hover:bg-surface-container rounded text-secondary hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-secondary italic">No manual changes registered in this session.</p>
-            )}
-
-            {/* Resize Slider for Revisions */}
-            <div
-              onMouseDown={handleResizeDrag('history')}
-              className="h-2 -mb-2 mt-1 flex items-center justify-center cursor-row-resize group select-none shrink-0 transition-all py-1"
-              title="Drag border to resize list"
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Copilot Header */}
-      <div className="px-3 py-2 border-b border-border-subtle flex justify-between items-center bg-white shrink-0">
+      {/* Copilot Header — revision log lives here as a pop-card */}
+      <div className="px-3 py-2 border-b border-border-subtle flex justify-between items-center bg-white shrink-0 relative">
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-primary" />
           <h3 className="text-[10px] font-bold uppercase tracking-widest text-on-surface">Travel Copilot</h3>
         </div>
-        <span className="text-[10px] font-bold text-success flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-success"></span>
-          Active
-        </span>
+
+        {/* Revision log trigger */}
+        <button
+          onClick={() => setShowRevisions(v => !v)}
+          className={`relative flex items-center gap-1 px-1.5 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
+            showRevisions ? 'bg-primary-soft text-primary' : 'text-secondary hover:bg-surface-container-low hover:text-primary'
+          }`}
+          title="Revision log"
+        >
+          <History className="w-4 h-4" />
+          {deltas.length > 0 && (
+            <span className="min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center bg-primary text-white rounded-full text-[9px] font-bold leading-none">
+              {deltas.length}
+            </span>
+          )}
+        </button>
+
+        {/* Revision log pop-card */}
+        {showRevisions && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setShowRevisions(false)} />
+            <div className="absolute top-[42px] right-2 w-72 max-h-80 overflow-y-auto custom-scrollbar bg-white border border-border-subtle rounded-xl shadow-lg z-50 animate-fadeIn">
+              <div className="px-3 py-2 flex items-center justify-between border-b border-border-subtle sticky top-0 bg-white">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 text-primary" />
+                  Revision Log
+                </span>
+                <span className="text-[9px] text-tertiary font-bold">{deltas.length}</span>
+              </div>
+              {deltas.length > 0 ? (
+                <div className="py-1">
+                  {deltas.map((delta) => {
+                    const verb =
+                      delta.type === 'move' ? 'Moved' :
+                      delta.type === 'add' ? 'Added' :
+                      delta.type === 'drop' ? 'Dropped' : 'Shifted';
+                    const suffix = delta.to ? ` → ${delta.to}` : delta.from ? ` · ${delta.from}` : '';
+                    return (
+                      <div key={delta.id} className="group flex items-center gap-2 px-3 py-1.5 hover:bg-surface-container-low transition-colors">
+                        <Check className="w-3 h-3 text-success shrink-0" />
+                        <span className="flex-1 min-w-0 text-[11px] text-on-surface truncate" title={`${verb} ${delta.itemTitle}${suffix}`}>
+                          <span className="font-bold">{verb}</span> {delta.itemTitle}<span className="text-secondary">{suffix}</span>
+                        </span>
+                        <button
+                          onClick={() => onRevertDelta(delta.id)}
+                          title="Revert change"
+                          className="p-0.5 rounded text-tertiary hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="px-3 py-4 text-[11px] text-secondary italic text-center">No changes yet this session.</p>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Copilot Message Timeline */}
@@ -363,7 +381,7 @@ export default function CopilotPanel({
             <div key={msg.id} className={`flex ${isAI ? '' : 'justify-end'}`}>
               <div className="flex flex-col gap-1 max-w-[90%]">
                 <div
-                  className={`p-2.5 text-xs font-medium leading-tight rounded-2xl ${
+                  className={`p-2.5 text-xs font-medium leading-snug rounded-2xl ${
                     isAI
                       ? 'bg-surface-container-low text-on-surface rounded-tl-none border border-border-subtle/50'
                       : 'bg-primary text-white rounded-tr-none'
@@ -371,36 +389,70 @@ export default function CopilotPanel({
                 >
                   {msg.text}
 
-                  {/* Suggestion Card inside AI Message */}
-                  {isAI && msg.suggestion && (
-                    <div className="mt-3 p-3 bg-white border border-border-subtle rounded-xl shadow-sm text-on-surface flex flex-col gap-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-primary tracking-widest uppercase">
-                          {msg.suggestion.type}
-                        </span>
-                        {msg.suggestion.type === 'Conflict Alert' ? (
-                          <AlertCircle className="w-3.5 h-3.5 text-warning" />
-                        ) : (
-                          <Sparkles className="w-3.5 h-3.5 text-primary" />
-                        )}
-                      </div>
-                      <p className="text-xs font-bold leading-tight">{msg.suggestion.title}</p>
-                      <p className="text-[10px] text-secondary leading-snug">{msg.suggestion.description}</p>
-                      {msg.suggestion.timeShift && (
-                        <div className="flex items-center gap-2 text-[10px] font-semibold text-secondary">
-                          <span className="line-through">{msg.suggestion.timeShift.from}</span>
-                          <span>&rarr;</span>
-                          <span className="text-primary font-bold">{msg.suggestion.timeShift.to}</span>
+                  {/* Suggestion — neutral text; colour lives only on the action button */}
+                  {isAI && msg.suggestion && (() => {
+                    const tier = classifySuggestion(msg.suggestion);
+                    const isConflict = msg.suggestion.type === 'Conflict Alert';
+                    return (
+                      <div className="mt-2 pt-2 border-t border-border-subtle/70 flex flex-col gap-1">
+                        <div className="flex items-center gap-1.5">
+                          {isConflict
+                            ? <AlertCircle className="w-3 h-3 text-[#D48A00]" />
+                            : <Sparkles className="w-3 h-3 text-secondary" />}
+                          <span className={`text-[9px] font-bold uppercase tracking-wide ${isConflict ? 'text-[#D48A00]' : 'text-secondary'}`}>
+                            {msg.suggestion.type}
+                          </span>
                         </div>
-                      )}
-                      <button
-                        onClick={() => onApplySug(msg.id)}
-                        className="py-1.5 bg-primary text-white text-[10px] font-bold rounded-lg cursor-pointer hover:bg-accent-primary-hover transition-colors mt-1"
-                      >
-                        {msg.suggestion.actionLabel || 'Apply'}
-                      </button>
-                    </div>
-                  )}
+                        <p className="text-[11px] font-bold leading-tight">{msg.suggestion.title}</p>
+                        {msg.suggestion.description && (
+                          <p className="text-[10px] text-secondary leading-snug">{msg.suggestion.description}</p>
+                        )}
+                        {msg.suggestion.timeShift && (
+                          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-secondary">
+                            <span className="line-through">{msg.suggestion.timeShift.from}</span>
+                            <span>&rarr;</span>
+                            <span className="font-bold text-[#D48A00]">{msg.suggestion.timeShift.to}</span>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => onApplySug(msg.id)}
+                          className={`self-start mt-0.5 px-3 py-1 text-[10px] font-bold rounded-lg cursor-pointer transition-colors ${TIER_BTN[tier]}`}
+                        >
+                          {msg.suggestion.actionLabel || 'Apply'}
+                        </button>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Staged schedule change — explicit confirm (blue add / orange shift / red remove) */}
+                  {isAI && pendingChanges && pendingChanges[msg.id] && (() => {
+                    const pc = pendingChanges[msg.id];
+                    const tier = classifyDeltas(pc.deltas);
+                    const label = tier === 'remove' ? 'Apply removal' : tier === 'change' ? 'Apply changes' : 'Add to plan';
+                    return (
+                      <div className="mt-2 pt-2 border-t border-border-subtle/70 flex flex-col gap-1.5">
+                        {pc.deltas && pc.deltas.length > 0 && (
+                          <div className="flex flex-col gap-0.5">
+                            {pc.deltas.slice(0, 4).map(d => {
+                              const verb = d.type === 'move' ? 'Move' : d.type === 'add' ? 'Add' : d.type === 'drop' ? 'Remove' : 'Shift';
+                              const suffix = d.to ? ` → ${d.to}` : d.from ? ` · ${d.from}` : '';
+                              return (
+                                <span key={d.id} className="text-[10px] text-secondary truncate" title={`${verb} ${d.itemTitle}${suffix}`}>
+                                  <span className="font-bold text-on-surface">{verb}</span> {d.itemTitle}{suffix}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <button
+                          onClick={() => onApplyChange?.(msg.id)}
+                          className={`self-start mt-0.5 px-3 py-1 text-[10px] font-bold rounded-lg cursor-pointer transition-colors ${TIER_BTN[tier]}`}
+                        >
+                          {label}
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <span className="text-[10px] text-tertiary px-1 text-right">
                   {msg.timestamp}

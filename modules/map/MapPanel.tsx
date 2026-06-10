@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { APIProvider, Map, AdvancedMarker, InfoWindow, useMap } from '@vis.gl/react-google-maps';
 import { Coffee, Compass, MapPin } from 'lucide-react';
 import { ItineraryItem, PlaceItem } from '@/shared/types/index';
@@ -122,24 +122,28 @@ function SelectionPanner({ target }: { target: google.maps.LatLngLiteral | null 
 
 export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelectItem, onHoverItem, pocketItems }: MapPanelProps) {
   // Filter active day itinerary items (filter out lodging/airport transit from primary route connections if desired, or keep classic ones)
-  const mapItems = items
+  // Memoized so the derived arrays keep a stable identity when `items` is unchanged —
+  // otherwise a fresh array every render re-fires the bounds/polyline effects below.
+  const mapItems = useMemo(() => items
     .filter(item => item.category !== 'stay' && item.category !== 'transit')
     .map((item, index) => ({
       ...item,
       latLng: getLatLng(item, index),
       indexOrder: index + 1
-    }));
+    })), [items]);
 
   // Show ALL saved pocket spots as faint "candidate" markers so the Research
   // Pocket is spatially integrated with the day's route. Skip any already
   // scheduled into today's route to avoid duplicate pins.
-  const routeIds = new Set(mapItems.map(i => i.id));
-  const candidateItems = (pocketItems || [])
-    .filter(item => !routeIds.has(item.id))
-    .map((item, index) => ({
-      ...item,
-      latLng: getLatLng(item, index + 20)
-    }));
+  const candidateItems = useMemo(() => {
+    const routeIds = new Set(mapItems.map(i => i.id));
+    return (pocketItems || [])
+      .filter(item => !routeIds.has(item.id))
+      .map((item, index) => ({
+        ...item,
+        latLng: getLatLng(item, index + 20)
+      }));
+  }, [pocketItems, mapItems]);
 
   // Find selected item representation to display modal/dialog details InfoWindow
   const selectedItem = (
@@ -149,9 +153,9 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
 
   // Fit bounds to the day's route so it stays framed; if today has no mapped
   // stops, frame the saved candidates instead so the pocket keeps context.
-  const allPoints = mapItems.length > 0
+  const allPoints = useMemo(() => mapItems.length > 0
     ? mapItems.map(i => i.latLng)
-    : candidateItems.map(i => i.latLng);
+    : candidateItems.map(i => i.latLng), [mapItems, candidateItems]);
 
   // If the user has not pasted their active key, present a beautiful layout guide
   if (!hasValidKey) {

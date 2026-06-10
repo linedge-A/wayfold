@@ -4,7 +4,7 @@
  */
 
 // ... (keep initial comments)
-import React, { useState, useEffect, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, useMemo, Component, ErrorInfo, ReactNode } from 'react';
 import { Sparkles, Map, Bot, Compass, Plus, ShieldAlert, Calendar, AlertTriangle } from 'lucide-react';
 import { APIProvider, useMapsLibrary } from '@vis.gl/react-google-maps';
 // ...
@@ -20,6 +20,7 @@ import { optimizeSchedule, OptimizationResult, ProposedChange } from '@/modules/
 import OptimizeScheduleModal from '@/modules/constraint-engine/OptimizeScheduleModal';
 import TripsPage from './TripsPage';
 import ExplorePage from './ExplorePage';
+import PocketBoardPage from './PocketBoardPage';
 import ShareModal from './ShareModal';
 import { AppState, CopilotMessage, PlaceItem, ItineraryItem, RevisionDelta } from '@/shared/types/index';
 import { INITIAL_TRIP_BRIEF, INITIAL_DAYS, INITIAL_ITINERARY_ITEMS, INITIAL_POCKET, INITIAL_BOOKINGS, INITIAL_REVISION_DELTAS, INITIAL_MESSAGES } from '@/shared/mock-data/seedData';
@@ -270,7 +271,17 @@ function AppContent() {
 
   // Computed Lookups
   const currentDay = appState.itineraryDays.find(d => d.id === appState.selectedDayId) || appState.itineraryDays[0];
-  const activeDayItems = appState.itineraryItems.filter(item => item.dayId === appState.selectedDayId);
+  // Memoized so MapPanel/ItineraryPanel receive a stable array identity when the data is unchanged —
+  // prevents the map's bounds-fit/polyline effects from re-firing on unrelated App re-renders.
+  const activeDayItems = useMemo(
+    () => appState.itineraryItems.filter(item => item.dayId === appState.selectedDayId),
+    [appState.itineraryItems, appState.selectedDayId]
+  );
+  // Flattened pocket POIs for the map — memoized for the same stable-identity reason.
+  const pocketMapItems = useMemo(
+    () => appState.pocket.flatMap(col => col.items),
+    [appState.pocket]
+  );
 
   // Hover is kept out of appState so a mousemove over the calendar/map doesn't re-render
   // the whole trip state — only the two panels that read hoveredItemId update.
@@ -1047,8 +1058,21 @@ function AppContent() {
             </div>
           ) : appState.currentView === 'explore' ? (
             <div className="absolute inset-0 z-20 bg-background p-2 animate-fadeIn">
-              <ExplorePage 
+              <ExplorePage
                 onViewChange={(view) => setAppState(prev => ({ ...prev, currentView: view }))}
+              />
+            </div>
+          ) : appState.currentView === 'pocket' ? (
+            <div className="absolute inset-0 z-20 bg-background p-2 animate-fadeIn">
+              <PocketBoardPage
+                pocket={appState.pocket}
+                selectedItemId={appState.selectedItemId}
+                onSelectItem={handleSelectItem}
+                onAddPocketItem={handleAddPocketItem}
+                onPromoteItem={handlePromotePocketItem}
+                onClearAll={handleClearAllPocket}
+                onRemovePocketItem={handleRemovePocketItem}
+                onAskCopilot={() => setAppState(prev => ({ ...prev, currentView: 'plan' }))}
               />
             </div>
           ) : (
@@ -1148,7 +1172,7 @@ function AppContent() {
                       hoveredItemId={hoveredItemId}
                       onSelectItem={handleSelectItem}
                       onHoverItem={handleHoverItem}
-                      pocketItems={appState.pocket.flatMap(col => col.items)}
+                      pocketItems={pocketMapItems}
                     />
                   </div>
 
