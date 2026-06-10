@@ -46,7 +46,7 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
                 isPlanOpen || currentView === 'plan' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:text-primary'
               }`}
             >
-              Plan
+              Folder
               <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isPlanOpen ? 'rotate-180' : ''}`} />
             </button>
 
