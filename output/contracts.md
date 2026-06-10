@@ -148,6 +148,7 @@ interface AppState {
   selectedItemId?: string
   selectedDayId?: string
   revisionDeltas: RevisionDelta[]
+  currentView: 'plan' | 'trips' | 'explore' | 'pocket'  // top-level route; 'pocket' = global Research Pocket board (added additively, Agent 9 approved)
 }
 ```
 
