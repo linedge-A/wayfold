@@ -3,7 +3,8 @@
  * Custom scheduling logic aligning with pacing habits & backtrack-free routing.
  */
 
-import { ItineraryItem, PlaceItem, RevisionDelta } from '@/shared/types/index';
+import type { ItineraryItem, PlaceItem } from '@/shared/types/index';
+import { toMinutes, fromMinutes, haversineKm } from './primitives';
 
 export interface ProposedChange {
   id: string; // matches item id, or 'new-item'
@@ -28,76 +29,25 @@ export interface OptimizationResult {
   backtrackEliminated: boolean;
 }
 
-// Coordinate Distance & Transit Helper (similar to ItineraryPanel)
+// Coordinate distance & transit helper — driving minutes from the shared Haversine primitive.
 export const getTravelTimeMin = (item1: any, item2: any): number => {
   if (!item1 || !item2) return 15;
-  const lat1 = item1.lat;
-  const lng1 = item1.lng;
-  const lat2 = item2.lat;
-  const lng2 = item2.lng;
-
-  if (lat1 === undefined || lng1 === undefined || lat2 === undefined || lng2 === undefined) {
-    return 15;
-  }
-
-  if (lat1 === lat2 && lng1 === lng2) {
-    return 5;
-  }
-
-  // Haversine distance
-  const R = 6371; // km
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  let distanceKm = R * c;
-
-  if (distanceKm > 100) {
+  const km = haversineKm(item1, item2);
+  if (km == null) return 15; // missing coordinates
+  if (km === 0) return 5;    // identical location
+  let distanceKm = km;
+  if (distanceKm > 100) {    // implausibly far (mock/seed data) → stable pseudo-local distance
     const strHash = (item1.id || '') + (item2.id || '');
     let hash = 0;
-    for (let i = 0; i < strHash.length; i++) {
-      hash = strHash.charCodeAt(i) + ((hash << 5) - hash);
-    }
+    for (let i = 0; i < strHash.length; i++) hash = strHash.charCodeAt(i) + ((hash << 5) - hash);
     distanceKm = 1.2 + (Math.abs(hash) % 45) / 10;
   }
-
-  const drivingSpeedKmh = 25;
-  let durationMin = Math.round((distanceKm / drivingSpeedKmh) * 60 + 3);
-  return Math.max(5, durationMin);
+  return Math.max(5, Math.round((distanceKm / 25) * 60 + 3)); // ~25 km/h urban + 3-min overhead
 };
 
-export const parseTimeToMinutes = (timeStr?: string): number => {
-  if (!timeStr) return 540; // 9:00 AM default
-  const cleaned = timeStr.trim().toUpperCase();
-  const match = cleaned.match(/^(\d+)(?::(\d+))?\s*(AM|PM)?$/);
-  if (!match) return 540;
-  
-  let hour = parseInt(match[1], 10);
-  let minute = match[2] ? parseInt(match[2], 10) : 0;
-  const ampm = match[3];
-
-  if (ampm) {
-    if (ampm === 'PM' && hour < 12) hour += 12;
-    if (ampm === 'AM' && hour === 12) hour = 0;
-  }
-  return hour * 60 + minute;
-};
-
-export const formatMinutesToTime = (totalMin: number): string => {
-  let rMin = totalMin % 1440;
-  if (rMin < 0) rMin += 1440;
-  let hour = Math.floor(rMin / 60);
-  const minute = rMin % 60;
-  const ampm = hour >= 12 ? 'PM' : 'AM';
-  if (hour > 12) hour -= 12;
-  if (hour === 0) hour = 12;
-  
-  const hStr = hour.toString().padStart(2, '0');
-  const mStr = minute.toString().padStart(2, '0');
-  return `${hStr}:${mStr} ${ampm}`;
-};
+// Re-exported from primitives.ts so the engine keeps one implementation of clock math.
+export const parseTimeToMinutes = (timeStr?: string): number => toMinutes(timeStr); // default 9:00 AM
+export const formatMinutesToTime = fromMinutes;
 
 // Parse opening hours (e.g. "9:00 AM - 6:00 PM" -> { start: 540, end: 1080 })
 const parseOpeningRange = (hoursStr?: string): { start: number; end: number } | null => {
