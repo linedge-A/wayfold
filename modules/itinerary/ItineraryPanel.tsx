@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, FormEvent, DragEvent } from 'react';
-import { Calendar, Pin, Lock, MapPin, Clock, Plus, Trash2, ShieldCheck, ChevronLeft, ChevronRight, Menu, ChevronDown, X, Car, ExternalLink, Sparkles, Share2 } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback, FormEvent } from 'react';
+import { Calendar, Pin, Lock, MapPin, Clock, Plus, Trash2, ShieldCheck, ChevronLeft, ChevronRight, Menu, ChevronDown, X, Car, ExternalLink, Sparkles, Share2, Footprints, Bike, Bus, Eye, Pencil } from 'lucide-react';
 import { ItineraryDay, ItineraryItem } from '@/shared/types/index';
 import GooglePlaceDetailsCard from '@/shared/utils/GooglePlaceDetailsCard';
 
@@ -49,10 +49,13 @@ const PRESET_TRIPS = [
   },
 ];
 
-const START_HOUR = 7; // 7 AM
-const END_HOUR = 22;  // 10 PM
-const HOUR_HEIGHT = 32; // Reduced from 38
+const START_HOUR = 7;   // 7 AM
+const END_HOUR = 22;    // 10 PM
+const HOUR_HEIGHT = 60; // 60px / hour → 1px per minute, so a 15-min slot is a comfortable 15px
 const MINUTE_HEIGHT = HOUR_HEIGHT / 60;
+const SNAP_MINUTES = 15; // drag/drop/create snapping granularity
+const DEFAULT_DURATION = 60;
+const GUTTER_PX = 56;   // width of the left time-label gutter
 
 // Returns minutes-since-midnight; defaults to 540 (9 AM) to match optimizer.ts behaviour.
 const parseTimeToMinutes = (timeStr?: string): number => {
@@ -72,6 +75,92 @@ const parseTimeToMinutes = (timeStr?: string): number => {
   return hour * 60 + minute;
 };
 
+// Minutes-since-midnight → "hh:mm AM/PM"
+const minutesToTimeString = (mins: number): string => {
+  const clamped = Math.max(0, Math.round(mins));
+  const h24 = Math.floor(clamped / 60) % 24;
+  const m = clamped % 60;
+  const ampm = h24 >= 12 ? 'PM' : 'AM';
+  let h = h24 % 12;
+  if (h === 0) h = 12;
+  const hStr = h < 10 ? `0${h}` : `${h}`;
+  const mStr = m < 10 ? `0${m}` : `${m}`;
+  return `${hStr}:${mStr} ${ampm}`;
+};
+
+const snapMinutes = (mins: number) => Math.round(mins / SNAP_MINUTES) * SNAP_MINUTES;
+
+// Denser hour scale for the 7-column week grid.
+const WEEK_HOUR_HEIGHT = 44;
+const WEEK_MINUTE_HEIGHT = WEEK_HOUR_HEIGHT / 60;
+const WEEK_GUTTER_PX = 40;
+
+const VIEW_LABELS: Record<'day' | 'week' | 'month' | 'agenda', string> = {
+  day: 'Day View',
+  week: 'Week View',
+  month: 'Month View',
+  agenda: 'Itinerary',
+};
+
+type TimedEvent = { item: ItineraryItem; min: number; dur: number };
+type PackedEvent = TimedEvent & { colIndex: number; columnsCount: number };
+
+// Column-packing: overlapping events form a cluster and split the width evenly,
+// matching Google/Apple Calendar side-by-side behaviour. Shared by day + week grids.
+const packEvents = (evts: TimedEvent[]): PackedEvent[] => {
+  const sorted = [...evts].sort((a, b) => a.min - b.min || a.dur - b.dur);
+  const out: PackedEvent[] = [];
+  let cluster: (TimedEvent & { colIndex: number })[] = [];
+  let clusterEnd = -1;
+  const flush = () => {
+    if (!cluster.length) return;
+    const colEnds: number[] = [];
+    cluster.forEach(ev => {
+      let placed = false;
+      for (let c = 0; c < colEnds.length; c++) {
+        if (colEnds[c] <= ev.min) { ev.colIndex = c; colEnds[c] = ev.min + ev.dur; placed = true; break; }
+      }
+      if (!placed) { ev.colIndex = colEnds.length; colEnds.push(ev.min + ev.dur); }
+    });
+    cluster.forEach(ev => out.push({ ...ev, columnsCount: colEnds.length }));
+    cluster = [];
+    clusterEnd = -1;
+  };
+  sorted.forEach(ev => {
+    if (cluster.length && ev.min >= clusterEnd) flush();
+    cluster.push({ ...ev, colIndex: 0 });
+    clusterEnd = Math.max(clusterEnd, ev.min + ev.dur);
+  });
+  flush();
+  return out;
+};
+
+// "9:00am–10:30am" range string for an item.
+const formatItemRange = (item: { startTime?: string; estimatedDurationMin?: number }): string => {
+  if (!item.startTime) return 'Flexible';
+  const start = parseTimeToMinutes(item.startTime);
+  const end = start + (item.estimatedDurationMin || DEFAULT_DURATION);
+  const fmt = (m: number) => minutesToTimeString(m).replace(' ', '').toLowerCase();
+  return `${fmt(start)}–${fmt(end)}`;
+};
+
+// Travel methods the user can switch between on a transit leg.
+type TravelMode = 'driving' | 'walking' | 'bicycling' | 'transit';
+const TRAVEL_MODES: TravelMode[] = ['driving', 'transit', 'bicycling', 'walking'];
+const TRAVEL_MODE_META: Record<TravelMode, { speedKmh: number; overheadMin: number; label: string }> = {
+  driving:   { speedKmh: 25, overheadMin: 3, label: 'Drive' },
+  transit:   { speedKmh: 18, overheadMin: 6, label: 'Transit' },
+  bicycling: { speedKmh: 15, overheadMin: 2, label: 'Cycle' },
+  walking:   { speedKmh: 4.8, overheadMin: 1, label: 'Walk' },
+};
+
+// Estimated travel minutes for a distance under a given method.
+const estimateTravelMinutes = (distanceKm: number, mode: TravelMode): number => {
+  const meta = TRAVEL_MODE_META[mode] || TRAVEL_MODE_META.driving;
+  const min = Math.round((distanceKm / meta.speedKmh) * 60 + meta.overheadMin);
+  return Math.max(mode === 'walking' ? 2 : 5, min);
+};
+
 const getDistanceAndDuration = (item1: any, item2: any) => {
   if (!item1 || !item2) return null;
   const lat1 = item1.lat;
@@ -80,11 +169,11 @@ const getDistanceAndDuration = (item1: any, item2: any) => {
   const lng2 = item2.lng;
 
   if (lat1 === undefined || lng1 === undefined || lat2 === undefined || lng2 === undefined) {
-    return { distance: '2.5 km', durationMin: 12, mode: 'driving' };
+    return { distance: '2.5 km', distanceKm: 2.5, durationMin: 12, mode: 'driving' };
   }
 
   if (lat1 === lat2 && lng1 === lng2) {
-    return { distance: '0.2 km', durationMin: 3, mode: 'driving' };
+    return { distance: '0.2 km', distanceKm: 0.2, durationMin: 3, mode: 'driving' };
   }
 
   // Haversine distance formula
@@ -114,63 +203,34 @@ const getDistanceAndDuration = (item1: any, item2: any) => {
 
   return {
     distance: distanceKm < 1 ? `${Math.round(distanceKm * 1000)} m` : `${distanceKm.toFixed(1)} km`,
+    distanceKm,
     durationMin,
     mode: 'driving'
   };
 };
 
-const getCategoryCardStyles = (cat: string, isSelected: boolean) => {
-  let bg = 'bg-slate-50';
-  let border = 'border-slate-200';
-  let borderLeft = 'border-l-4 border-l-slate-400';
-  let text = 'text-slate-800';
-  let labelBg = 'bg-slate-200/50 text-slate-600';
+// Per design-rules.md: category is metadata only, expressed as the left-border accent
+// (and small tag tint) — NEVER as surface fill. Surfaces stay neutral; selection uses
+// the blue soft background + accent-line border defined in the token system.
+const CATEGORY_ACCENTS: Record<string, { line: string; tag: string }> = {
+  sight:   { line: 'border-l-[#2F80ED]', tag: 'bg-[#2F80ED]/10 text-[#2F80ED]' },
+  food:    { line: 'border-l-[#F2994A]', tag: 'bg-[#F2994A]/10 text-[#F2994A]' },
+  stay:    { line: 'border-l-[#9B51E0]', tag: 'bg-[#9B51E0]/10 text-[#9B51E0]' },
+  transit: { line: 'border-l-[#27AE60]', tag: 'bg-[#27AE60]/10 text-[#27AE60]' },
+  booking: { line: 'border-l-[#EB5757]', tag: 'bg-[#EB5757]/10 text-[#EB5757]' },
+  backup:  { line: 'border-l-[#8D99AE]', tag: 'bg-[#8D99AE]/10 text-[#8D99AE]' },
+};
 
-  switch (cat) {
-    case 'sight':
-      bg = isSelected ? 'bg-blue-50/95' : 'bg-[#F2F7FE]';
-      border = isSelected ? 'border-blue-400' : 'border-[#2F80ED]/15';
-      borderLeft = 'border-l-4 border-l-[#2F80ED]';
-      text = 'text-[#1F5BB0]';
-      labelBg = 'bg-[#2F80ED]/10 text-[#2F80ED]';
-      break;
-    case 'food':
-      bg = isSelected ? 'bg-orange-50/95' : 'bg-[#FFF9F3]';
-      border = isSelected ? 'border-orange-400' : 'border-[#F2994A]/15';
-      borderLeft = 'border-l-4 border-l-[#F2994A]';
-      text = 'text-[#C56C1B]';
-      labelBg = 'bg-[#F2994A]/10 text-[#F2994A]';
-      break;
-    case 'stay':
-      bg = isSelected ? 'bg-purple-50/95' : 'bg-[#FAF5FF]';
-      border = isSelected ? 'border-purple-400' : 'border-[#9B51E0]/15';
-      borderLeft = 'border-l-4 border-l-[#9B51E0]';
-      text = 'text-[#7D38C0]';
-      labelBg = 'bg-[#9B51E0]/10 text-[#9B51E0]';
-      break;
-    case 'transit':
-      bg = isSelected ? 'bg-green-50/95' : 'bg-[#F3FCF6]';
-      border = isSelected ? 'border-green-400' : 'border-[#27AE60]/15';
-      borderLeft = 'border-l-4 border-l-[#27AE60]';
-      text = 'text-[#1C8C4B]';
-      labelBg = 'bg-[#27AE60]/10 text-[#27AE60]';
-      break;
-    case 'booking':
-      bg = isSelected ? 'bg-red-50/95' : 'bg-[#FFF5F5]';
-      border = isSelected ? 'border-red-400' : 'border-[#EB5757]/15';
-      borderLeft = 'border-l-4 border-l-[#EB5757]';
-      text = 'text-[#C93B3B]';
-      labelBg = 'bg-[#EB5757]/10 text-[#EB5757]';
-      break;
-    default:
-      bg = isSelected ? 'bg-slate-50/95' : 'bg-[#F8F9FA]';
-      border = isSelected ? 'border-[#8D99AE]/50' : 'border-[#8D99AE]/15';
-      borderLeft = 'border-l-4 border-l-[#8D99AE]';
-      text = 'text-[#535D70]';
-      labelBg = 'bg-[#8D99AE]/10 text-[#8D99AE]';
-      break;
-  }
-  return { bg, border, borderLeft, text, labelBg };
+const getCategoryCardStyles = (cat: string, isSelected: boolean) => {
+  const accent = CATEGORY_ACCENTS[cat] || CATEGORY_ACCENTS.backup;
+  return {
+    // Neutral surface only — selected = --bg-selected (#EEF6FF) + --accent-primary-line (#CFE2FF)
+    bg: isSelected ? 'bg-[#EEF6FF]' : 'bg-white',
+    border: isSelected ? 'border-[#CFE2FF]' : 'border-border-subtle',
+    borderLeft: `border-l-4 ${accent.line}`,
+    text: 'text-on-surface',
+    labelBg: accent.tag,
+  };
 };
 
 const getShortDateString = (fullDate: string) => {
@@ -209,15 +269,17 @@ interface ItineraryPanelProps {
   days: ItineraryDay[];
   items: ItineraryItem[];
   selectedItemId?: string;
-  viewType: 'day' | 'week' | 'month';
+  viewType: 'day' | 'week' | 'month' | 'agenda';
   focusMode: boolean;
+  readOnly?: boolean;
+  onToggleReadMode?: () => void;
   onSelectItem: (id: string | undefined) => void;
   onSelectDay: (id: string) => void;
   onTogglePin: (id: string) => void;
   onToggleLock: (id: string) => void;
   onAddItem: (item: Partial<ItineraryItem>) => void;
   onRemoveItem: (id: string) => void;
-  onSetViewType: (type: 'day' | 'week' | 'month') => void;
+  onSetViewType: (type: 'day' | 'week' | 'month' | 'agenda') => void;
   onUpdateItemTime?: (id: string, newTime: string) => void;
   onPromotePocketItemToTime?: (placeItem: any, timeStr: string) => void;
   onShare?: () => void;
@@ -230,6 +292,8 @@ export default function ItineraryPanel({
   selectedItemId,
   viewType,
   focusMode,
+  readOnly = false,
+  onToggleReadMode,
   onSelectItem,
   onSelectDay,
   onTogglePin,
@@ -242,75 +306,205 @@ export default function ItineraryPanel({
   onShare
 }: ItineraryPanelProps) {
   const [showAddForm, setShowAddForm] = useState(false);
-  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newTime, setNewTime] = useState('09:00 AM');
+  const [newDuration, setNewDuration] = useState(DEFAULT_DURATION);
   const [newCategory, setNewCategory] = useState<'sight' | 'food' | 'stay' | 'transit'>('sight');
   const [newArea, setNewArea] = useState('');
 
-  const formatHourToTimeString = (hour: number): string => {
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    let h = hour % 12;
-    if (h === 0) h = 12;
-    const hStr = h < 10 ? `0${h}` : `${h}`;
-    return `${hStr}:00 ${ampm}`;
+  // Pointer-driven drag state (move/create events, or slide a transit leg), snapped to 15 min.
+  const gridRef = useRef<HTMLDivElement>(null);
+  type DragState = {
+    mode: 'move' | 'create' | 'transit';
+    itemId?: string;
+    segmentId?: string;
+    startMin: number;
+    durationMin: number;
+    grabOffsetMin: number;
+    anchorMin: number;
+    minMin?: number;
+    maxMin?: number;
+    pointerStartY: number;
+    moved: boolean;
+  };
+  const dragRef = useRef<DragState | null>(null);
+  const [dragPreview, setDragPreview] = useState<DragState | null>(null);
+
+  // Per-leg transit overrides: chosen travel method + manual departure time (minutes since midnight).
+  const [transitOverrides, setTransitOverrides] = useState<Record<string, { mode?: TravelMode; departMin?: number }>>({});
+  const [openTransitMenu, setOpenTransitMenu] = useState<string | null>(null);
+
+  const MAX_MINUTES = (END_HOUR + 1) * 60;
+
+  // Convert a clientY pixel position into snapped minutes-since-midnight within the grid.
+  const clientYToSnappedMinutes = (clientY: number): number => {
+    const rect = gridRef.current?.getBoundingClientRect();
+    if (!rect) return START_MINUTES;
+    const raw = START_MINUTES + (clientY - rect.top) / MINUTE_HEIGHT;
+    return Math.max(START_MINUTES, Math.min(MAX_MINUTES - SNAP_MINUTES, snapMinutes(raw)));
   };
 
-  const formatHourMinuteToTimeString = (hour: number, minute: number): string => {
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    let h = hour % 12;
-    if (h === 0) h = 12;
-    const hStr = h < 10 ? `0${h}` : `${h}`;
-    const mStr = minute === 30 ? '30' : '00';
-    return `${hStr}:${mStr} ${ampm}`;
-  };
-
-  const handleDoubleClickHour = (hour: number, e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickY = e.clientY - rect.top;
-    const ratio = clickY / rect.height; // Between 0 and 1
-    
-    // Choose closest 30-minute chunk (either :00 or :30)
-    const minute = ratio >= 0.5 ? 30 : 0;
-    
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    let h = hour % 12;
-    if (h === 0) h = 12;
-    const hStr = h < 10 ? `0${h}` : `${h}`;
-    const mStr = minute === 30 ? '30' : '00';
-    
-    const timeStr = `${hStr}:${mStr} ${ampm}`;
-    setNewTime(timeStr);
+  const handleGridDoubleClick = (e: React.MouseEvent) => {
+    if (readOnly) return;
+    const snapped = clientYToSnappedMinutes(e.clientY);
+    setNewTime(minutesToTimeString(snapped));
+    setNewDuration(DEFAULT_DURATION);
     setShowAddForm(true);
   };
 
-  const handleDropOnHour = (e: React.DragEvent, hour: number, precalculatedMinute?: number) => {
+  const handlePointerMove = useCallback((e: PointerEvent) => {
+    const d = dragRef.current;
+    if (!d || !gridRef.current) return;
+    const rect = gridRef.current.getBoundingClientRect();
+    const raw = START_MINUTES + (e.clientY - rect.top) / MINUTE_HEIGHT;
+    const moved = Math.abs(e.clientY - d.pointerStartY) > 4;
+    let next: DragState;
+    if (d.mode === 'move') {
+      let start = snapMinutes(raw - d.grabOffsetMin);
+      start = Math.max(START_MINUTES, Math.min(MAX_MINUTES - d.durationMin, start));
+      next = { ...d, startMin: start, moved };
+    } else if (d.mode === 'transit') {
+      // Slide the travel block within the gap between the two stops.
+      let depart = snapMinutes(raw - d.grabOffsetMin);
+      depart = Math.max(d.minMin ?? START_MINUTES, Math.min(d.maxMin ?? START_MINUTES, depart));
+      next = { ...d, startMin: depart, moved };
+    } else {
+      let cur = Math.max(START_MINUTES, Math.min(MAX_MINUTES, snapMinutes(raw)));
+      const start = Math.min(d.anchorMin, cur);
+      const end = Math.max(d.anchorMin + SNAP_MINUTES, cur);
+      next = { ...d, startMin: start, durationMin: end - start, moved };
+    }
+    dragRef.current = next;
+    setDragPreview(next);
+  }, []);
+
+  const handlePointerUp = useCallback(() => {
+    window.removeEventListener('pointermove', handlePointerMove);
+    const d = dragRef.current;
+    dragRef.current = null;
+    setDragPreview(null);
+    if (!d) return;
+    if (d.mode === 'move') {
+      if (d.moved && d.itemId) {
+        onUpdateItemTime?.(d.itemId, minutesToTimeString(d.startMin));
+      } else if (d.itemId) {
+        onSelectItem(selectedItemId === d.itemId ? undefined : d.itemId);
+      }
+    } else if (d.mode === 'transit') {
+      if (d.moved && d.segmentId) {
+        const segId = d.segmentId;
+        const departMin = d.startMin;
+        setTransitOverrides(prev => ({ ...prev, [segId]: { ...prev[segId], departMin } }));
+      }
+    } else {
+      if (d.moved) {
+        setNewTime(minutesToTimeString(d.startMin));
+        setNewDuration(d.durationMin);
+        setShowAddForm(true);
+      } else {
+        onSelectItem(undefined);
+      }
+    }
+  }, [handlePointerMove, onUpdateItemTime, onSelectItem, selectedItemId]);
+
+  const startDrag = (state: DragState, e: React.PointerEvent) => {
+    e.preventDefault();
+    dragRef.current = state;
+    setDragPreview(state);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp, { once: true });
+  };
+
+  const handleMovePointerDown = (e: React.PointerEvent, item: ItineraryItem) => {
+    if (readOnly) return;
+    if ((e.target as HTMLElement).closest('button, a')) return; // let inner controls work
+    if (!gridRef.current) return;
+    const rect = gridRef.current.getBoundingClientRect();
+    const pointerMin = START_MINUTES + (e.clientY - rect.top) / MINUTE_HEIGHT;
+    const startMin = parseTimeToMinutes(item.startTime);
+    const durationMin = item.estimatedDurationMin || DEFAULT_DURATION;
+    startDrag({
+      mode: 'move',
+      itemId: item.id,
+      startMin,
+      durationMin,
+      grabOffsetMin: pointerMin - startMin,
+      anchorMin: startMin,
+      pointerStartY: e.clientY,
+      moved: false,
+    }, e);
+  };
+
+  const handleCreatePointerDown = (e: React.PointerEvent) => {
+    if (readOnly) return;
+    if (e.button !== 0 || !gridRef.current) return;
+    const anchor = clientYToSnappedMinutes(e.clientY);
+    startDrag({
+      mode: 'create',
+      startMin: anchor,
+      durationMin: SNAP_MINUTES,
+      grabOffsetMin: 0,
+      anchorMin: anchor,
+      pointerStartY: e.clientY,
+      moved: false,
+    }, e);
+  };
+
+  const handlePocketDrop = (e: React.DragEvent) => {
     e.preventDefault();
     try {
       const dataStr = e.dataTransfer.getData('application/json');
       if (!dataStr) return;
       const data = JSON.parse(dataStr);
-
-      let targetMinute = 0;
-      if (precalculatedMinute !== undefined) {
-        targetMinute = precalculatedMinute;
-      } else {
-        // Compute from current hour-slot bounding rect
-        const rect = e.currentTarget.getBoundingClientRect();
-        const dropY = e.clientY - rect.top;
-        const ratio = dropY / rect.height;
-        targetMinute = ratio >= 0.5 ? 30 : 0;
-      }
-
-      const timeStr = formatHourMinuteToTimeString(hour, targetMinute);
-
+      const timeStr = minutesToTimeString(clientYToSnappedMinutes(e.clientY));
       if (data.type === 'pocket-item' && onPromotePocketItemToTime) {
         onPromotePocketItemToTime(data.item, timeStr);
       } else if (data.type === 'calendar-item' && onUpdateItemTime) {
         onUpdateItemTime(data.itemId, timeStr);
       }
     } catch (err) {
-      console.error('Failed dummy JSON parsing of dropped elements:', err);
+      console.error('Failed to parse dropped item:', err);
+    }
+  };
+
+  // Begin sliding a transit leg's departure within its [earliest, latest] window.
+  const handleTransitPointerDown = (
+    e: React.PointerEvent,
+    segmentId: string,
+    departMin: number,
+    minMin: number,
+    maxMin: number,
+  ) => {
+    if (readOnly) return;
+    if ((e.target as HTMLElement).closest('button, a')) return; // method switch / Navi link
+    if (!gridRef.current || maxMin <= minMin) return; // no room to slide
+    const rect = gridRef.current.getBoundingClientRect();
+    const pointerMin = START_MINUTES + (e.clientY - rect.top) / MINUTE_HEIGHT;
+    startDrag({
+      mode: 'transit',
+      segmentId,
+      startMin: departMin,
+      durationMin: 0,
+      grabOffsetMin: pointerMin - departMin,
+      anchorMin: departMin,
+      minMin,
+      maxMin,
+      pointerStartY: e.clientY,
+      moved: false,
+    }, e);
+  };
+
+  const setTransitMode = (segmentId: string, mode: TravelMode) => {
+    setTransitOverrides(prev => ({ ...prev, [segmentId]: { ...prev[segmentId], mode } }));
+    setOpenTransitMenu(null);
+  };
+
+  const renderModeIcon = (mode: TravelMode, cls = 'w-3 h-3') => {
+    switch (mode) {
+      case 'walking': return <Footprints className={cls} />;
+      case 'bicycling': return <Bike className={cls} />;
+      case 'transit': return <Bus className={cls} />;
+      default: return <Car className={cls} />;
     }
   };
 
@@ -334,6 +528,7 @@ export default function ItineraryPanel({
     .filter(item => item.dayId === currentDay.id);
 
   const handleCyclePinState = (item: ItineraryItem) => {
+    if (readOnly) return;
     if (item.pinState === 'none') {
       onTogglePin(item.id);
     } else if (item.pinState === 'soft') {
@@ -349,73 +544,78 @@ export default function ItineraryPanel({
   // Items with no startTime are shown in the "Flexible & All-Day" section
   const flexibleItems = currentDayItems.filter(item => !item.startTime);
 
-  const timedItems = currentDayItems.filter(item => !!item.startTime)
-    .map(item => {
-      const min = parseTimeToMinutes(item.startTime);
-      const duration = item.estimatedDurationMin || 60;
-      const top = (min - START_MINUTES) * MINUTE_HEIGHT;
-      const calculatedHeight = duration * MINUTE_HEIGHT;
-      const height = Math.max(calculatedHeight, 38);
-      return { item, min, top, height };
-    })
-    .sort((a, b) => a.min - b.min);
+  const timedItems = currentDayItems
+    .filter(item => !!item.startTime)
+    .map(item => ({
+      item,
+      min: parseTimeToMinutes(item.startTime),
+      dur: item.estimatedDurationMin || DEFAULT_DURATION,
+    }))
+    .sort((a, b) => a.min - b.min || a.dur - b.dur);
 
-  const columns: { end: number }[][] = [];
-  const positionedTimedItems = timedItems.map(timed => {
-    let colIndex = 0;
-    while (colIndex < columns.length) {
-      const lastInCol = columns[colIndex][columns[colIndex].length - 1];
-      if (timed.top >= lastInCol.end) {
-        break;
-      }
-      colIndex++;
-    }
-    if (colIndex === columns.length) {
-      columns.push([]);
-    }
-    columns[colIndex].push({ end: timed.top + timed.height });
-    return { ...timed, colIndex };
-  });
+  // Column-packing layout (shared with the week grid) — overlapping events split the width.
+  const positionedTimedItems = packEvents(timedItems);
+  const orderedItems = [...positionedTimedItems].sort((a, b) => a.min - b.min);
 
-  // Calculate transportation gaps between consecutive scheduled items
+  // Transit = MINIMUM travel time for the chosen method. The leg can be slid within the
+  // gap between two stops (depart early to arrive early, or depart late to leave a buffer
+  // for the previous stop running over). Leftover gap is just blank space — no fill.
   const transitSegments: {
     id: string;
-    item1: any;
-    item2: any;
+    item1: ItineraryItem;
+    item2: ItineraryItem;
+    departMin: number;
     top: number;
-    height: number;
+    travelHeight: number;
     distance: string;
+    distanceKm: number;
     durationMin: number;
-    mode: string;
+    mode: TravelMode;
     gapMinutes: number;
+    earliestDepart: number;
+    latestDepart: number;
+    status: 'ok' | 'tight' | 'overlap';
   }[] = [];
 
-  for (let i = 0; i < positionedTimedItems.length - 1; i++) {
-    const current = positionedTimedItems[i];
-    const next = positionedTimedItems[i + 1];
+  for (let i = 0; i < orderedItems.length - 1; i++) {
+    const current = orderedItems[i];
+    const next = orderedItems[i + 1];
 
-    const currentEndMin = current.min + (current.item.estimatedDurationMin || 60);
-    const nextStartMin = next.min;
-
+    const currentEndMin = current.min + current.dur;
+    const gapMin = next.min - currentEndMin;
     const est = getDistanceAndDuration(current.item, next.item);
-    if (est) {
-      const top = (currentEndMin - START_MINUTES) * MINUTE_HEIGHT;
-      const gapMin = nextStartMin - currentEndMin;
-      // Show actual length in time as the segment height: durationMin in minutes * MINUTE_HEIGHT
-      const height = est.durationMin * MINUTE_HEIGHT;
+    if (!est) continue;
 
-      transitSegments.push({
-        id: `transit-${current.item.id}-${next.item.id}`,
-        item1: current.item,
-        item2: next.item,
-        top,
-        height,
-        distance: est.distance,
-        durationMin: est.durationMin,
-        mode: est.mode,
-        gapMinutes: gapMin
-      });
-    }
+    const segId = `transit-${current.item.id}-${next.item.id}`;
+    const override = transitOverrides[segId] || {};
+    const mode: TravelMode = override.mode || 'driving';
+    const durationMin = estimateTravelMinutes(est.distanceKm, mode);
+
+    const status: 'ok' | 'tight' | 'overlap' = gapMin <= 0 ? 'overlap' : durationMin > gapMin ? 'tight' : 'ok';
+    // Window the departure can slide within.
+    const earliestDepart = currentEndMin;
+    const latestDepart = Math.max(earliestDepart, next.min - durationMin);
+    const liveDepart = dragPreview?.mode === 'transit' && dragPreview.segmentId === segId
+      ? dragPreview.startMin
+      : (override.departMin ?? earliestDepart);
+    const departMin = Math.max(earliestDepart, Math.min(latestDepart, liveDepart));
+
+    transitSegments.push({
+      id: segId,
+      item1: current.item,
+      item2: next.item,
+      departMin,
+      top: (departMin - START_MINUTES) * MINUTE_HEIGHT,
+      travelHeight: Math.max(durationMin, 0) * MINUTE_HEIGHT,
+      distance: est.distance,
+      distanceKm: est.distanceKm,
+      durationMin,
+      mode,
+      gapMinutes: gapMin,
+      earliestDepart,
+      latestDepart,
+      status,
+    });
   }
 
   const handleAddNewItem = (e: FormEvent) => {
@@ -427,11 +627,13 @@ export default function ItineraryPanel({
       startTime: newTime,
       category: newCategory,
       area: newArea.trim() || 'Custom Stop',
+      estimatedDurationMin: newDuration,
       pinState: 'none'
     });
 
     setNewTitle('');
     setNewArea('');
+    setNewDuration(DEFAULT_DURATION);
     setShowAddForm(false);
   };
 
@@ -529,16 +731,31 @@ export default function ItineraryPanel({
             </div>
           </div>
 
-          {/* Consolidated View Switch Dropdown */}
-          <div className="relative shrink-0">
+          {/* Edit/Read toggle + view switch */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onToggleReadMode && (
+              <button
+                type="button"
+                onClick={onToggleReadMode}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer shadow-sm ${
+                  readOnly
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                    : 'bg-white text-on-surface border-border-subtle hover:bg-surface-container-low'
+                }`}
+                title={readOnly ? 'Read mode — click to edit' : 'Edit mode — click for read / trip view'}
+              >
+                {readOnly ? <Eye className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
+                {readOnly ? 'Read' : 'Edit'}
+              </button>
+            )}
+
+          <div className="relative">
             <button
               type="button"
               onClick={() => setIsViewDropdownOpen(!isViewDropdownOpen)}
               className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-surface-container-low border border-border-subtle rounded-lg text-xs font-bold text-on-surface transition-all cursor-pointer shadow-sm bg-white"
             >
-              <span>
-                {viewType === 'day' ? 'Day View' : viewType === 'week' ? 'Week View' : 'Month View'}
-              </span>
+              <span>{VIEW_LABELS[viewType]}</span>
               <ChevronDown className="w-4 h-4 text-secondary shrink-0" />
             </button>
 
@@ -548,8 +765,8 @@ export default function ItineraryPanel({
                   className="fixed inset-0 z-40 bg-transparent"
                   onClick={() => setIsViewDropdownOpen(false)}
                 />
-                <div className="absolute right-0 mt-1.5 w-32 bg-white border border-border-subtle rounded-xl shadow-lg py-1 z-50 animate-fadeIn text-xs">
-                  {(['day', 'week', 'month'] as const).map(viewTypeOption => (
+                <div className="absolute right-0 mt-1.5 w-36 bg-white border border-border-subtle rounded-xl shadow-lg py-1 z-50 animate-fadeIn text-xs">
+                  {(['day', 'week', 'month', 'agenda'] as const).map(viewTypeOption => (
                     <button
                       key={viewTypeOption}
                       type="button"
@@ -561,12 +778,13 @@ export default function ItineraryPanel({
                         viewType === viewTypeOption ? 'text-primary bg-accent-soft/40 font-bold' : 'text-on-surface'
                       }`}
                     >
-                      {viewTypeOption === 'day' ? 'Day View' : viewTypeOption === 'week' ? 'Week View' : 'Month View'}
+                      {VIEW_LABELS[viewTypeOption]}
                     </button>
                   ))}
                 </div>
               </>
             )}
+          </div>
           </div>
         </div>
       </div>
@@ -613,13 +831,15 @@ export default function ItineraryPanel({
               >
                 <Share2 className="w-4 h-4" />
               </button>
-              <button
-                onClick={() => setShowAddForm(!showAddForm)}
-                className={`p-1.5 rounded-md hover:bg-slate-100 transition-colors cursor-pointer flex items-center justify-center`}
-                title="Add New Stop"
-              >
-                <Plus className={`w-4 h-4 transition-transform duration-200 ${showAddForm ? 'rotate-45 text-red-500' : 'text-primary'}`} />
-              </button>
+              {!readOnly && (
+                <button
+                  onClick={() => setShowAddForm(!showAddForm)}
+                  className={`p-1.5 rounded-md hover:bg-slate-100 transition-colors cursor-pointer flex items-center justify-center`}
+                  title="Add New Stop"
+                >
+                  <Plus className={`w-4 h-4 transition-transform duration-200 ${showAddForm ? 'rotate-45 text-red-500' : 'text-primary'}`} />
+                </button>
+              )}
             </div>
           </div>
 
@@ -675,7 +895,7 @@ export default function ItineraryPanel({
                               </div>
                             </div>
                           </div>
-                          <div className="flex flex-col items-center gap-1.5 shrink-0 ml-1">
+                          <div className={`flex flex-col items-center gap-1.5 shrink-0 ml-1 ${readOnly ? 'hidden' : ''}`}>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -728,226 +948,257 @@ export default function ItineraryPanel({
             {/* Real Calendar Grid View */}
             <div className="relative overflow-visible w-full px-1">
 
-              <div 
-                className="relative" 
+              <div
+                ref={gridRef}
+                className="relative select-none"
                 style={{ height: `${(END_HOUR - START_HOUR + 1) * HOUR_HEIGHT}px` }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const dropY = e.clientY - rect.top;
-                  const totalHeight = (END_HOUR - START_HOUR + 1) * HOUR_HEIGHT;
-                  const ratio = Math.max(0, Math.min(0.999, dropY / totalHeight));
-                  const totalHours = END_HOUR - START_HOUR + 1;
-                  const snappedMinutes = Math.round((ratio * totalHours * 60) / 30) * 30;
-                  const targetHour = START_HOUR + Math.floor(snappedMinutes / 60);
-                  const targetMinute = snappedMinutes % 60;
-                  const clampedHour = Math.max(START_HOUR, Math.min(END_HOUR, targetHour));
-                  handleDropOnHour(e, clampedHour, targetMinute);
-                }}
               >
-                {/* Horizontal lines grid */}
-                {Array.from({ length: END_HOUR - START_HOUR + 1 }).map((_, index) => {
-                  const hour = index + START_HOUR;
-                  const displayHour = hour === 12 ? '12 PM' : hour > 12 ? `${hour - 12} PM` : `${hour} AM`;
-
-                  return (
-                    <div 
-                      key={hour} 
-                      className="absolute left-0 right-0 border-t border-slate-100 group/hour relative" 
-                      style={{ top: `${index * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
-                    >
-                      {/* Hour labels on left lane */}
-                      <span className="absolute -top-2 left-0 w-9 text-right text-[10px] font-bold text-slate-400 select-none pr-1.5">
-                        {displayHour}
-                      </span>
-
-                      {/* Drop target and Double-click zone with premium design hint */}
-                      <div
-                        onDoubleClick={(e) => handleDoubleClickHour(hour, e)}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          e.currentTarget.classList.add('bg-primary/5');
-                        }}
-                        onDragLeave={(e) => {
-                          e.currentTarget.classList.remove('bg-primary/5');
-                        }}
-                        onDrop={(e) => {
-                          e.stopPropagation();
-                          e.currentTarget.classList.remove('bg-primary/5');
-                          handleDropOnHour(e, hour);
-                        }}
-                        className="absolute left-10 right-0 top-0 bottom-0 hover:bg-slate-50/40 transition-colors duration-100 cursor-cell flex items-center justify-end pr-3"
-                        title="Double-click to schedule, or drop an activity here"
-                      >
-                        <span className="text-[9px] text-primary/60 font-bold bg-white px-2 py-0.5 rounded border border-primary/20 shadow-sm flex items-center gap-0.5 select-none pointer-events-none opacity-0 group-hover/hour:opacity-100 transition-opacity duration-150">
-                          <Plus className="w-2.5 h-2.5 text-primary" />
-                          Double Click to Add
+                {/* Time gutter + hour / quarter-hour grid lines */}
+                <div className="absolute inset-0 pointer-events-none">
+                  {Array.from({ length: END_HOUR - START_HOUR + 1 }).map((_, index) => {
+                    const hour = index + START_HOUR;
+                    const displayHour = hour === 12 ? '12 PM' : hour > 12 ? `${hour - 12} PM` : `${hour} AM`;
+                    const y = index * HOUR_HEIGHT;
+                    return (
+                      <div key={hour}>
+                        <span
+                          className="absolute left-0 text-right text-[10px] font-bold text-slate-400 whitespace-nowrap -translate-y-1/2"
+                          style={{ top: `${y}px`, width: `${GUTTER_PX - 8}px` }}
+                        >
+                          {displayHour}
                         </span>
+                        {/* Solid hour line */}
+                        <div className="absolute right-0 border-t border-slate-200/80" style={{ top: `${y}px`, left: `${GUTTER_PX}px` }} />
+                        {/* Quarter-hour sublines (:30 slightly stronger / dashed) */}
+                        {[15, 30, 45].map((m) => (
+                          <div
+                            key={m}
+                            className={`absolute right-0 border-t ${m === 30 ? 'border-slate-200/60 border-dashed' : 'border-slate-100'}`}
+                            style={{ top: `${y + m * MINUTE_HEIGHT}px`, left: `${GUTTER_PX}px` }}
+                          />
+                        ))}
                       </div>
+                    );
+                  })}
+                </div>
 
-                      {/* Hour line offset */}
-                      <div className="absolute left-10 right-0 border-t border-slate-100/70 pointer-events-none" style={{ top: 0 }} />
-                    </div>
-                  );
-                })}
+                {/* Interaction surface: double-click to add, click-drag to create, drop pocket items.
+                    Sits beneath the (pointer-events-none) event layer so empty space stays interactive. */}
+                <div
+                  className="absolute top-0 bottom-0 right-0 cursor-cell"
+                  style={{ left: `${GUTTER_PX}px` }}
+                  onDoubleClick={handleGridDoubleClick}
+                  onPointerDown={handleCreatePointerDown}
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+                  onDrop={handlePocketDrop}
+                  title="Double-click to add, or drag to block out time"
+                />
 
-                {/* Event absolute chips inside the calendar grid region */}
-                <div className="absolute top-0 bottom-0 left-10 right-0 pointer-events-none">
-                  {positionedTimedItems.map(({ item, top, height, colIndex }) => {
+                {/* Live ghost while drag-creating a new time range */}
+                {dragPreview?.mode === 'create' && (
+                  <div
+                    className="absolute right-0 rounded-lg border-2 border-dashed border-primary/50 bg-primary/10 pointer-events-none z-50 flex items-center justify-center"
+                    style={{
+                      left: `${GUTTER_PX}px`,
+                      top: `${(dragPreview.startMin - START_MINUTES) * MINUTE_HEIGHT}px`,
+                      height: `${Math.max(dragPreview.durationMin * MINUTE_HEIGHT, 16)}px`,
+                    }}
+                  >
+                    <span className="text-[10px] font-bold text-primary bg-white/90 px-1.5 py-0.5 rounded shadow-sm">
+                      {minutesToTimeString(dragPreview.startMin)} · {dragPreview.durationMin}m
+                    </span>
+                  </div>
+                )}
+
+                {/* Scheduled event chips — pointer-drag to move (15-min snap), column-packed when overlapping */}
+                <div className="absolute top-0 bottom-0 right-0 pointer-events-none" style={{ left: `${GUTTER_PX}px` }}>
+                  {positionedTimedItems.map(({ item, min, dur, colIndex, columnsCount }) => {
                     const isSelected = selectedItemId === item.id;
+                    const isMoving = dragPreview?.mode === 'move' && dragPreview.itemId === item.id;
+                    const startMin = isMoving ? dragPreview!.startMin : min;
                     const styles = getCategoryCardStyles(item.category, isSelected);
-                    const topVal = Math.max(0, Math.min(top, (END_HOUR - START_HOUR + 1) * HOUR_HEIGHT - height));
-                    const isDraggingThis = draggingItemId === item.id;
-                    const isDraggingOther = draggingItemId !== null && !isDraggingThis;
+                    const top = (startMin - START_MINUTES) * MINUTE_HEIGHT;
+                    const height = Math.max(dur * MINUTE_HEIGHT, 20);
+                    const colW = 100 / columnsCount;
+                    const compact = height < 42;
+                    const endMin = startMin + dur;
+                    const fmt = (m: number) => minutesToTimeString(m).replace(' ', '').toLowerCase();
 
                     return (
                       <div
                         key={item.id}
+                        onPointerDown={(e) => handleMovePointerDown(e, item)}
+                        onClick={readOnly ? () => onSelectItem(isSelected ? undefined : item.id) : undefined}
                         style={{
                           position: 'absolute',
-                          top: `${topVal}px`,
+                          top: `${top}px`,
                           height: `${height}px`,
-                          left: `${colIndex * 16}px`,
-                          width: `calc(100% - ${colIndex * 16}px)`,
-                          zIndex: isSelected ? 30 : 10 + colIndex,
+                          left: `calc(${colIndex * colW}% + 1px)`,
+                          width: `calc(${colW}% - 3px)`,
+                          zIndex: isSelected || isMoving ? 40 : 12 + colIndex,
+                          touchAction: 'none',
                         }}
-                        onClick={() => onSelectItem(isSelected ? undefined : item.id)}
-                        draggable
-                        onDragStart={(e) => {
-                          setDraggingItemId(item.id);
-                          e.dataTransfer.setData('application/json', JSON.stringify({
-                            type: 'calendar-item',
-                            itemId: item.id
-                          }));
-                          e.dataTransfer.effectAllowed = 'move';
-                          e.currentTarget.classList.add('opacity-50');
-                        }}
-                        onDragEnd={(e) => {
-                          setDraggingItemId(null);
-                          e.currentTarget.classList.remove('opacity-50');
-                        }}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          e.dataTransfer.dropEffect = 'move';
-                        }}
-                        className={`${
-                          isDraggingThis ? 'pointer-events-none opacity-40 select-none' :
-                          isDraggingOther ? 'pointer-events-none opacity-30 select-none' : 'pointer-events-auto cursor-grab active:cursor-grabbing hover:scale-[1.005] hover:shadow'
-                        } p-1.5 rounded-r-xl border transition-all group flex flex-col justify-between ${styles.bg} ${styles.border} ${styles.borderLeft} ${
-                          isSelected ? 'ring-1 ring-primary/25 shadow-md scale-[1.01]' : 'shadow-sm'
+                        className={`pointer-events-auto group rounded-lg border overflow-hidden transition-shadow ${styles.bg} ${styles.border} ${styles.borderLeft} ${
+                          isMoving
+                            ? 'opacity-90 shadow-lg cursor-grabbing ring-2 ring-primary/40'
+                            : isSelected
+                            ? 'ring-1 ring-primary/30 shadow-md cursor-grab'
+                            : 'shadow-sm cursor-grab hover:shadow'
                         }`}
                       >
-                        <div className="flex flex-col h-full justify-between">
-                          <div className="flex justify-between items-start gap-1">
-                            <div>
-                              <h3 className={`text-xs font-bold leading-tight ${styles.text}`}>
-                                {item.title}
-                              </h3>
-                              {height >= 80 && item.note && (
-                                <p className="text-[10px] italic text-blue-600 mt-1 leading-snug flex items-center gap-1">
-                                  <ShieldCheck className="w-3 h-3 shrink-0" />
+                        <div className="flex flex-col h-full px-1.5 py-1">
+                          <div className="flex items-start justify-between gap-1">
+                            <div className="min-w-0 flex-1">
+                              <span className={`block text-[9px] font-bold text-slate-500 tabular-nums truncate ${compact ? '' : 'mb-0.5'}`}>
+                                {fmt(startMin)}–{fmt(endMin)}
+                              </span>
+                              <h3 className={`text-[11px] font-bold leading-tight truncate ${styles.text}`}>{item.title}</h3>
+                              {!compact && (
+                                <p className="text-[9px] text-slate-500 font-medium truncate mt-0.5">
+                                  {item.area}{item.estimatedDurationMin ? ` · ${item.estimatedDurationMin}m` : ''}
+                                </p>
+                              )}
+                              {height >= 78 && item.note && (
+                                <p className="text-[9px] italic text-blue-600 mt-1 leading-snug flex items-start gap-1">
+                                  <ShieldCheck className="w-3 h-3 shrink-0 mt-px" />
                                   <span className="truncate">{item.note}</span>
                                 </p>
                               )}
                             </div>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onRemoveItem(item.id);
-                              }}
-                              className="p-1 rounded-md hover:bg-black/5 opacity-40 hover:opacity-100 text-slate-500 hover:text-red-500 transition-all cursor-pointer shrink-0 -mt-0.5 -mr-0.5"
-                              title="Remove stop"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
+                            <div className={`flex shrink-0 ${compact ? 'flex-row' : 'flex-col'} items-center gap-0.5`}>
+              {!readOnly && (
+                              <button
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => { e.stopPropagation(); onRemoveItem(item.id); }}
+                                className="p-0.5 rounded hover:bg-black/5 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-all cursor-pointer"
+                                title="Remove stop"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+              )}
+                              <button
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => { e.stopPropagation(); handleCyclePinState(item); }}
+                                className="p-0.5 rounded hover:bg-black/5 transition-all text-slate-400 cursor-pointer"
+                                title="Cycle pin / lock"
+                              >
+                                {item.pinState === 'hard'
+                                  ? <Lock className="w-3 h-3 text-[#1F6FD6]" />
+                                  : <PushPinIcon pinned={item.pinState === 'soft'} />}
+                              </button>
+                            </div>
                           </div>
-
-                          <div className="flex justify-between items-end gap-2 mt-1">
-                            {item.subCategory || item.budget || item.openingHours ? (
-                              <div className="text-[9px] text-slate-450 font-medium flex-1 flex flex-wrap items-center gap-1 leading-tight pointer-events-none truncate select-none">
-                                {item.subCategory && <span className="font-semibold text-slate-500">{item.subCategory}</span>}
-                                {item.budget && <span className="bg-slate-100 text-slate-500 px-0.5 rounded-sm text-[8px] font-bold">{item.budget}</span>}
-                                {item.openingHours && <span className="text-slate-400 truncate">{item.openingHours}</span>}
-                                {item.estimatedDurationMin && <span className="text-slate-450 opacity-60">• {item.estimatedDurationMin}m</span>}
-                              </div>
-                            ) : (
-                              <span className="text-[10px] text-slate-500 font-medium truncate flex-1 block">
-                                {item.area} {item.estimatedDurationMin ? `• ${item.estimatedDurationMin}m` : ''}
-                              </span>
-                            )}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleCyclePinState(item);
-                              }}
-                              className="p-1 rounded-md hover:bg-black/5 transition-all text-slate-500 shrink-0 cursor-pointer -mb-0.5 -mr-0.5"
-                              title="Cycle Pin/Lock State"
-                            >
-                              {item.pinState === 'hard' ? (
-                              <Lock className="w-3.5 h-3.5 text-[#1F6FD6]" />
-                            ) : (
-                              <PushPinIcon pinned={item.pinState === 'soft'} className={item.pinState === 'soft' ? 'animate-bounce' : ''} />
-                            )}
-                          </button>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
 
-                {transitSegments.map(segment => {
-                  if (segment.height <= 2) return null;
-                  const isDraggingOther = draggingItemId !== null;
+                {/* Transit: minimum travel time for the chosen method. Drag the pill within the gap
+                    to depart earlier/later; switch method; open turn-by-turn via Navi. No buffer fill. */}
+                <div className="absolute top-0 bottom-0 right-0 pointer-events-none" style={{ left: `${GUTTER_PX}px` }}>
+                  {transitSegments.map(segment => {
+                    const isDraggingThis = dragPreview?.mode === 'transit' && dragPreview.segmentId === segment.id;
+                    const dim = dragPreview && !isDraggingThis ? 'opacity-20' : '';
+                    const canSlide = segment.latestDepart > segment.earliestDepart;
+                    const menuOpen = openTransitMenu === segment.id;
+                    const capsuleColor =
+                      segment.status === 'overlap' ? 'border-[#D64545] text-[#D64545]' :
+                      segment.status === 'tight' ? 'border-[#D48A00] text-[#D48A00]' :
+                      'border-border-subtle text-secondary';
+                    const lineColor =
+                      segment.status === 'overlap' ? 'border-l-[#D64545]' :
+                      segment.status === 'tight' ? 'border-l-[#D48A00]' :
+                      'border-l-slate-300';
 
-                  return (
-                    <div
-                      key={segment.id}
-                      style={{
-                        position: 'absolute',
-                        top: `${segment.top}px`,
-                        height: `${segment.height}px`,
-                        left: '0px',
-                        right: '0px',
-                        zIndex: 5,
-                      }}
-                      className={`${
-                        isDraggingOther ? 'pointer-events-none opacity-20' : 'pointer-events-auto'
-                      } border-y border-r border-slate-200/50 border-l-4 border-l-slate-400 bg-slate-400/[0.03] hover:bg-slate-400/[0.05] rounded-r-xl transition-all duration-150 flex items-center justify-center group select-none overflow-visible shadow-sm`}
-                    >
-                      {/* Middle textual note */}
-                      <div className="flex items-center gap-1.5 px-3 py-1 bg-white/95 backdrop-blur-sm border border-slate-200 rounded-full shadow-sm text-[10px] text-slate-500 select-none max-w-[95%] pointer-events-auto transition-transform duration-100 group-hover:scale-105">
-                        <Car className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span className="font-semibold text-slate-600 capitalize">{segment.mode}</span>
-                        <span className="text-slate-355 shrink-0">•</span>
-                        <span className="font-medium text-slate-500 shrink-0">{segment.distance}</span>
-                        <span className="text-slate-355 shrink-0">•</span>
-                        <span className="font-semibold text-slate-700 shrink-0">{segment.durationMin} min</span>
-                        <span className="text-slate-355 shrink-0">•</span>
-                        <a 
-                          href={`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(segment.item1.formattedAddress || segment.item1.title)}&destination=${encodeURIComponent(segment.item2.formattedAddress || segment.item2.title)}&travelmode=driving`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          onDragStart={(e) => e.preventDefault()}
-                          className="text-blue-500 hover:text-blue-600 font-bold hover:underline inline-flex items-center gap-0.5 shrink-0 transition-colors"
-                          title="Open directions in Google Maps app"
+                    return (
+                      <div key={segment.id} className={`transition-opacity ${dim}`}>
+                        {/* Travel connector line (length = travel time) */}
+                        <div
+                          className={`absolute border-l-2 border-dashed ${lineColor}`}
+                          style={{ top: `${segment.top}px`, height: `${Math.max(segment.travelHeight, 4)}px`, left: '7px' }}
+                        />
+
+                        {/* Draggable travel pill, centered on the connector */}
+                        <div
+                          className="absolute z-[6] pointer-events-auto -translate-y-1/2"
+                          style={{ top: `${segment.top + Math.max(segment.travelHeight, 8) / 2}px`, left: '14px', touchAction: 'none' }}
+                          onPointerDown={(e) => handleTransitPointerDown(e, segment.id, segment.departMin, segment.earliestDepart, segment.latestDepart)}
                         >
-                          Navi <ExternalLink className="w-2.5 h-2.5" />
-                        </a>
+                          <div
+                            className={`inline-flex items-center gap-1 pl-1 pr-2 py-0.5 bg-white border rounded-full shadow-sm text-xs select-none whitespace-nowrap ${capsuleColor} ${
+                              isDraggingThis ? 'shadow-lg cursor-grabbing' : canSlide ? 'cursor-grab' : ''
+                            }`}
+                            title={canSlide ? 'Drag to depart earlier or later' : undefined}
+                          >
+                            {/* Method switch */}
+                            <button
+                              type="button"
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => { e.stopPropagation(); if (!readOnly) setOpenTransitMenu(menuOpen ? null : segment.id); }}
+                              className="flex items-center gap-0.5 rounded-full hover:bg-black/5 px-1 py-0.5 cursor-pointer"
+                              title="Change travel method"
+                            >
+                              {renderModeIcon(segment.mode, 'w-3.5 h-3.5')}
+                              <ChevronDown className="w-2.5 h-2.5 opacity-60" />
+                            </button>
+                            <span className="font-bold">{segment.durationMin}m</span>
+                            <span className="opacity-40">·</span>
+                            <span className="font-medium">{segment.distance}</span>
+                            {isDraggingThis && <span className="font-semibold">· dep {minutesToTimeString(segment.departMin).replace(' ', '').toLowerCase()}</span>}
+                            {!isDraggingThis && segment.status === 'tight' && <span className="font-bold">· tight</span>}
+                            {!isDraggingThis && segment.status === 'overlap' && <span className="font-bold">· overlaps</span>}
+                            <span className="opacity-40">·</span>
+                            <a
+                              href={`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(segment.item1.formattedAddress || segment.item1.title)}&destination=${encodeURIComponent(segment.item2.formattedAddress || segment.item2.title)}&travelmode=${segment.mode}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-blue-500 hover:text-blue-600 font-bold hover:underline inline-flex items-center gap-0.5"
+                              title="Open directions in Google Maps"
+                            >
+                              Navi <ExternalLink className="w-2.5 h-2.5" />
+                            </a>
+                          </div>
+
+                          {/* Method picker popover */}
+                          {menuOpen && (
+                            <>
+                              <div className="fixed inset-0 z-40" onPointerDown={(e) => { e.stopPropagation(); setOpenTransitMenu(null); }} onClick={() => setOpenTransitMenu(null)} />
+                              <div className="absolute top-full left-0 mt-1 z-50 w-32 bg-white border border-border-subtle rounded-xl shadow-lg py-1 animate-fadeIn">
+                                {TRAVEL_MODES.map(m => {
+                                  const mins = estimateTravelMinutes(segment.distanceKm, m);
+                                  return (
+                                    <button
+                                      key={m}
+                                      type="button"
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                      onClick={(e) => { e.stopPropagation(); setTransitMode(segment.id, m); }}
+                                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs hover:bg-surface-container-low cursor-pointer ${
+                                        segment.mode === m ? 'text-primary font-bold' : 'text-on-surface'
+                                      }`}
+                                    >
+                                      {renderModeIcon(m, 'w-3.5 h-3.5')}
+                                      <span className="flex-1 text-left">{TRAVEL_MODE_META[m].label}</span>
+                                      <span className="text-tertiary">{mins}m</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
 
                 {/* Absolute Inline Add Form */}
                 {showAddForm && (() => {
                   const newTimeMinutes = parseTimeToMinutes(newTime);
                   const minutesClamp = Math.max(START_MINUTES, Math.min((END_HOUR + 1) * 60, newTimeMinutes));
-                  const formTop = (minutesClamp - START_MINUTES) * MINUTE_HEIGHT;
+                  let formTop = (minutesClamp - START_MINUTES) * MINUTE_HEIGHT;
 
                   // Adjust the overlay upward slightly if it's too close to the end of the day, to keep it within view
                   const containerMaxHeight = (END_HOUR - START_HOUR + 1) * HOUR_HEIGHT;
@@ -962,7 +1213,7 @@ export default function ItineraryPanel({
                       style={{
                         position: 'absolute',
                         top: `${formTop}px`,
-                        left: '4px',
+                        left: `${GUTTER_PX + 4}px`,
                         right: '4px',
                         zIndex: 100,
                       }}
@@ -971,7 +1222,7 @@ export default function ItineraryPanel({
                       <div className="flex justify-between items-center px-0.5">
                         <div className="text-[10px] font-bold text-primary flex items-center gap-1">
                           <Plus className="w-3 h-3" />
-                          <span>Add Activity • {newTime}</span>
+                          <span>Add Activity • {newTime} · {newDuration}m</span>
                         </div>
                         <button
                           type="button"
@@ -1026,6 +1277,25 @@ export default function ItineraryPanel({
                           ))}
                         </div>
                       </div>
+                      <div className="flex gap-2 text-[9px] font-semibold text-secondary items-center justify-between px-0.5">
+                        <span>Duration:</span>
+                        <div className="flex gap-1">
+                          {[30, 60, 90, 120].map((d) => (
+                            <button
+                              type="button"
+                              key={d}
+                              onClick={() => setNewDuration(d)}
+                              className={`px-1.5 py-0.5 rounded transition-all cursor-pointer border ${
+                                newDuration === d
+                                  ? 'bg-primary text-white border-primary shadow-sm'
+                                  : 'bg-white border-border-subtle hover:bg-slate-50 text-secondary'
+                              }`}
+                            >
+                              {d >= 60 ? `${d / 60}h${d % 60 ? ` ${d % 60}m` : ''}` : `${d}m`}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <div className="flex gap-1.5 justify-end mt-0.5 px-0.5">
                         <button
                           type="button"
@@ -1045,12 +1315,11 @@ export default function ItineraryPanel({
                   );
                 })()}
               </div>
-            </div>
 
               {currentDayItems.length === 0 && (
-                <div className="py-12 text-center absolute inset-0 bg-white/95 z-20 rounded-2xl flex flex-col justify-center items-center">
+                <div className="py-12 text-center absolute inset-0 bg-white/95 z-20 rounded-2xl flex flex-col justify-center items-center pointer-events-none">
                   <p className="text-secondary text-xs italic">No items scheduled for this day yet.</p>
-                  <p className="text-[10px] text-tertiary mt-1">Quick-add from the Pocket below, or click insert above.</p>
+                  <p className="text-[10px] text-tertiary mt-1">Double-click the grid to add a stop, or drag from the Pocket below.</p>
                 </div>
               )}
             </div>
@@ -1060,104 +1329,121 @@ export default function ItineraryPanel({
         </div>
       )}
 
-      {/* Week Calendar Board ( इमेज 1 representation ) */}
+      {/* Week — true time-grid: shared hour scale, 7 day columns, category-styled chips */}
       {viewType === 'week' && (
-        <div className="flex-grow flex flex-col overflow-hidden bg-bg-panel-muted select-none">
-          <div className="grid grid-cols-7 border-b border-border-subtle bg-white sticky top-0 shrink-0">
-            {days.map((day) => (
-              <div
-                key={day.id}
-                onClick={() => onSelectDay(day.id)}
-                className={`py-3 text-center border-r border-border-subtle cursor-pointer transition-all hover:bg-bg-panel-hover last:border-r-0 ${
-                  currentDay.id === day.id ? 'bg-accent-soft' : ''
-                }`}
-              >
-                <span className={`text-[10px] font-bold block ${currentDay.id === day.id ? 'text-primary' : 'text-secondary'}`}>
-                  {day.label}
-                </span>
-                <span className={`text-md font-extrabold leading-none ${currentDay.id === day.id ? 'text-primary' : 'text-on-surface'}`}>
-                  {day.date}
-                </span>
-              </div>
-            ))}
+        <div className="flex-grow flex flex-col overflow-hidden bg-white select-none">
+          {/* Sticky day headers (aligned to the gutter) */}
+          <div className="flex border-b border-border-subtle bg-white shrink-0">
+            <div className="shrink-0" style={{ width: `${WEEK_GUTTER_PX}px` }} />
+            <div className="flex-1 grid grid-cols-7">
+              {days.map((day) => {
+                const isCur = currentDay.id === day.id;
+                const count = items.filter(i => i.dayId === day.id).length;
+                return (
+                  <button
+                    key={day.id}
+                    type="button"
+                    onClick={() => onSelectDay(day.id)}
+                    className={`py-2 text-center border-r border-border-subtle last:border-r-0 cursor-pointer transition-colors ${
+                      isCur ? 'bg-accent-soft' : 'hover:bg-surface-container-low'
+                    }`}
+                  >
+                    <span className={`block text-[10px] font-bold ${isCur ? 'text-primary' : 'text-secondary'}`}>{day.label}</span>
+                    <span className={`block text-sm font-extrabold leading-tight ${isCur ? 'text-primary' : 'text-on-surface'}`}>{day.date}</span>
+                    {count > 0 && <span className="block mt-0.5 text-[8px] font-bold text-tertiary">{count} stop{count > 1 ? 's' : ''}</span>}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          {/* List Days column stacks */}
-          <div className="flex-1 grid grid-cols-7 overflow-x-auto overflow-y-auto custom-scrollbar bg-white">
-            {days.map((day) => {
-              const dayItems = items
-                .filter(item => item.dayId === day.id)
-                .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+          {/* Scrollable time grid */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar">
+            <div className="flex" style={{ height: `${(END_HOUR - START_HOUR + 1) * WEEK_HOUR_HEIGHT}px` }}>
+              {/* Time gutter */}
+              <div className="relative shrink-0" style={{ width: `${WEEK_GUTTER_PX}px` }}>
+                {Array.from({ length: END_HOUR - START_HOUR + 1 }).map((_, i) => {
+                  const hour = i + START_HOUR;
+                  const disp = hour === 12 ? '12p' : hour > 12 ? `${hour - 12}p` : `${hour}a`;
+                  return (
+                    <span
+                      key={hour}
+                      className="absolute right-1.5 text-[9px] font-bold text-slate-400 -translate-y-1/2 whitespace-nowrap"
+                      style={{ top: `${i * WEEK_HOUR_HEIGHT}px` }}
+                    >
+                      {disp}
+                    </span>
+                  );
+                })}
+              </div>
 
-              return (
-                <div
-                  key={day.id}
-                  onClick={() => onSelectDay(day.id)}
-                  className={`border-r border-border-subtle p-2 flex flex-col gap-2.5 min-h-[300px] last:border-r-0 cursor-pointer ${
-                    day.id === currentDay.id ? 'bg-accent-soft/20' : 'bg-white'
-                  }`}
-                >
-                  {dayItems.map((item) => {
-                    const isSelected = selectedItemId === item.id;
-                    const hasLock = item.pinState === 'hard';
-
-                    return (
-                      <div
-                        key={item.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelectItem(isSelected ? undefined : item.id);
-                          onSelectDay(day.id);
-                        }}
-                        className={`p-2.5 rounded-xl border transition-all text-left group relative shadow-sm cursor-pointer ${
-                          isSelected
-                            ? 'bg-[#EEF6FF] border-primary'
-                            : hasLock
-                            ? 'bg-accent-soft border-primary/20'
-                            : 'bg-white border-border-subtle hover:border-primary/20'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start gap-1">
-                          <div className="flex items-center gap-1 capitalize text-[9px] font-bold text-secondary">
-                            <span className={`w-1.5 h-1.5 rounded-full ${getCategoryColorClass(item.category)}`}></span>
-                            <span>{item.startTime}</span>
-                          </div>
-                          {hasLock && <Lock className="w-2.5 h-2.5 text-primary shrink-0 mt-0.5" />}
-                        </div>
-                        <h4 className="text-[11px] font-bold leading-tight text-on-surface mt-1 truncate">
-                          {item.title}
-                        </h4>
-                        {item.note && (
-                          <p className="text-[8px] text-primary truncate mt-0.5">{item.note}</p>
-                        )}
-                        {isSelected && (
-                          <GooglePlaceDetailsCard
-                            title={item.title}
-                            category={item.category}
-                            rating={item.rating}
-                            userRatingCount={item.userRatingCount}
-                            phoneNumber={item.phoneNumber}
-                            website={item.website}
-                            reservable={item.reservable}
-                            editorialSummary={item.editorialSummary}
-                            formattedAddress={item.formattedAddress}
-                            openingHours={item.openingHours}
-                            estimatedDurationMin={item.estimatedDurationMin}
-                            budget={item.budget}
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
-
-                  {dayItems.length === 0 && (
-                    <div className="flex-1 flex items-center justify-center p-4 border border-dashed border-border-subtle rounded-xl min-h-[100px] opacity-40">
-                      <span className="text-[9px] text-tertiary text-center">Add Activity</span>
-                    </div>
-                  )}
+              {/* Day columns */}
+              <div className="flex-1 grid grid-cols-7 relative">
+                {/* Hour lines across all columns */}
+                <div className="absolute inset-0 pointer-events-none">
+                  {Array.from({ length: END_HOUR - START_HOUR + 1 }).map((_, i) => (
+                    <div key={i} className="absolute left-0 right-0 border-t border-slate-100" style={{ top: `${i * WEEK_HOUR_HEIGHT}px` }} />
+                  ))}
                 </div>
-              );
-            })}
+
+                {days.map((day) => {
+                  const isCur = currentDay.id === day.id;
+                  const packed = packEvents(
+                    items
+                      .filter(it => it.dayId === day.id && it.startTime)
+                      .map(it => ({ item: it, min: parseTimeToMinutes(it.startTime), dur: it.estimatedDurationMin || DEFAULT_DURATION }))
+                  );
+                  return (
+                    <div
+                      key={day.id}
+                      onClick={() => onSelectDay(day.id)}
+                      onDoubleClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const raw = START_MINUTES + (e.clientY - rect.top) / WEEK_MINUTE_HEIGHT;
+                        const snapped = Math.max(START_MINUTES, Math.min((END_HOUR + 1) * 60 - SNAP_MINUTES, snapMinutes(raw)));
+                        onSelectDay(day.id);
+                        setNewTime(minutesToTimeString(snapped));
+                        setNewDuration(DEFAULT_DURATION);
+                        setShowAddForm(true);
+                        onSetViewType('day');
+                      }}
+                      className={`relative border-r border-border-subtle last:border-r-0 cursor-cell ${isCur ? 'bg-accent-soft/20' : 'hover:bg-slate-50/40'}`}
+                      title="Double-click to add a stop on this day"
+                    >
+                      {packed.map(({ item, min, dur, colIndex, columnsCount }) => {
+                        const isSel = selectedItemId === item.id;
+                        const styles = getCategoryCardStyles(item.category, isSel);
+                        const top = (min - START_MINUTES) * WEEK_MINUTE_HEIGHT;
+                        const height = Math.max(dur * WEEK_MINUTE_HEIGHT, 13);
+                        const colW = 100 / columnsCount;
+                        return (
+                          <div
+                            key={item.id}
+                            onClick={(e) => { e.stopPropagation(); onSelectItem(isSel ? undefined : item.id); onSelectDay(day.id); }}
+                            style={{
+                              position: 'absolute',
+                              top: `${top}px`,
+                              height: `${height}px`,
+                              left: `calc(${colIndex * colW}% + 1px)`,
+                              width: `calc(${colW}% - 2px)`,
+                              zIndex: isSel ? 20 : 10 + colIndex,
+                            }}
+                            className={`rounded border overflow-hidden px-1 py-0.5 cursor-pointer transition-shadow ${styles.bg} ${styles.border} ${styles.borderLeft} ${
+                              isSel ? 'ring-1 ring-primary/30 shadow' : 'shadow-sm hover:shadow'
+                            }`}
+                          >
+                            <span className="block text-[8px] font-bold text-slate-500 tabular-nums truncate leading-none">
+                              {item.startTime?.replace(' ', '').toLowerCase()}
+                            </span>
+                            <span className={`block text-[9px] font-bold leading-tight truncate ${styles.text}`}>{item.title}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1202,51 +1488,58 @@ export default function ItineraryPanel({
             {/* Rendering days 1 to 30 */}
             {Array.from({ length: 30 }, (_, index) => {
               const dayNum = index + 1;
-              const dateTag = dayNum.toString();
               const isTripDay = dayNum >= 12 && dayNum <= 18;
+              const mappedDayId = isTripDay ? `day-${dayNum - 11}` : '';
+              const isSelected = isTripDay && currentDay.id === mappedDayId;
 
-              // Find current trip items on this day
-              // April 12 is Day 1
-              let mappedDayId = '';
-              if (isTripDay) {
-                mappedDayId = `day-${dayNum - 11}`;
-              }
-
-              const dayItems = items.filter(item => item.dayId === mappedDayId);
+              const dayItems = items
+                .filter(item => item.dayId === mappedDayId)
+                .sort((a, b) => parseTimeToMinutes(a.startTime || '') - parseTimeToMinutes(b.startTime || ''));
+              const visible = dayItems.slice(0, 3);
+              const moreCount = dayItems.length - visible.length;
 
               return (
                 <div
                   key={dayNum}
-                  onClick={() => {
-                    if (isTripDay) onSelectDay(mappedDayId);
-                  }}
-                  className={`p-2 border-r border-b border-border-subtle min-h-[90px] flex flex-col gap-1 transition-all ${
-                    isTripDay
-                      ? 'bg-accent-soft'
-                      : 'bg-white hover:bg-bg-panel-hover'
-                  }`}
+                  onClick={() => { if (isTripDay) onSelectDay(mappedDayId); }}
+                  onDoubleClick={() => { if (isTripDay) { onSelectDay(mappedDayId); onSetViewType('day'); } }}
+                  className={`relative p-1.5 border-r border-b border-border-subtle min-h-[96px] flex flex-col gap-1 transition-all ${
+                    isTripDay ? 'bg-accent-soft/60 hover:bg-accent-soft cursor-pointer' : 'bg-white hover:bg-bg-panel-hover'
+                  } ${isSelected ? 'ring-2 ring-inset ring-primary z-10' : ''}`}
                 >
-                  <span className={`text-[10px] font-bold ${isTripDay ? 'text-primary' : 'text-on-surface'}`}>
-                    {dayNum}
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[10px] font-bold ${isTripDay ? 'text-primary' : 'text-on-surface'}`}>{dayNum}</span>
+                    {dayItems.length > 0 && (
+                      <span className="text-[8px] font-bold text-tertiary bg-white/70 rounded px-1 leading-tight">{dayItems.length}</span>
+                    )}
+                  </div>
 
-                  <div className="flex flex-col gap-1 overflow-y-auto max-h-[80px] custom-scrollbar">
-                    {dayItems.map(item => (
-                      <div
-                        key={item.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (isTripDay) {
-                            onSelectDay(mappedDayId);
-                            onSelectItem(item.id);
-                          }
-                        }}
-                        className="py-1 px-1.5 rounded text-[9px] bg-white border border-border-subtle truncate flex items-center gap-1 text-on-surface font-semibold hover:border-primary shadow-sm"
+                  <div className="flex flex-col gap-0.5">
+                    {visible.map(item => {
+                      const styles = getCategoryCardStyles(item.category, false);
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isTripDay) { onSelectDay(mappedDayId); onSelectItem(item.id); }
+                          }}
+                          className={`px-1 py-0.5 rounded text-[8px] font-semibold truncate flex items-center gap-1 border ${styles.bg} ${styles.border} ${styles.borderLeft} hover:shadow-sm cursor-pointer`}
+                          title={`${item.startTime || ''} ${item.title}`}
+                        >
+                          <span className="tabular-nums text-slate-500 shrink-0">{item.startTime?.split(' ')[0]}</span>
+                          <span className={`truncate ${styles.text}`}>{item.title}</span>
+                        </div>
+                      );
+                    })}
+                    {moreCount > 0 && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onSelectDay(mappedDayId); onSetViewType('day'); }}
+                        className="text-[8px] font-bold text-primary hover:underline text-left px-1 cursor-pointer"
                       >
-                        <span className={`w-1 h-1 rounded-full shrink-0 ${getCategoryColorClass(item.category)}`} />
-                        <span className="truncate">{item.startTime?.split(' ')[0]} {item.title}</span>
-                      </div>
-                    ))}
+                        +{moreCount} more
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -1256,6 +1549,130 @@ export default function ItineraryPanel({
             {Array.from({ length: 4 }).map((_, index) => (
               <div key={index} className="p-2 border-r border-b border-border-subtle opacity-30 bg-surface-container-low min-h-[90px]"></div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Itinerary (Agenda) — the itinerary-first list: every day grouped, with travel + buffer hints */}
+      {viewType === 'agenda' && (
+        <div className="flex-grow overflow-y-auto custom-scrollbar bg-slate-50/30 select-none">
+          <div className="p-3 space-y-4">
+            {days.map((day) => {
+              const dayItems = items
+                .filter(i => i.dayId === day.id)
+                .sort((a, b) => parseTimeToMinutes(a.startTime || '') - parseTimeToMinutes(b.startTime || ''));
+              const timed = dayItems.filter(i => i.startTime);
+              const flexible = dayItems.filter(i => !i.startTime);
+              const isCur = currentDay.id === day.id;
+
+              return (
+                <div key={day.id}>
+                  {/* Sticky day header — Tier 3 date + Tier 5 area summary (calendar column rules) */}
+                  <button
+                    type="button"
+                    onClick={() => onSelectDay(day.id)}
+                    className={`sticky top-0 z-10 w-full flex items-center justify-between px-3 py-2 rounded-lg mb-2 backdrop-blur bg-white/90 border cursor-pointer transition-colors ${
+                      isCur ? 'border-primary/40 shadow-sm' : 'border-border-subtle hover:border-primary/20'
+                    }`}
+                  >
+                    <div className="flex items-baseline gap-2 min-w-0">
+                      <span className={`text-sm font-semibold shrink-0 ${isCur ? 'text-primary' : 'text-on-surface'}`}>
+                        {getShortDateString(day.fullDateString)}
+                      </span>
+                      {day.areaSummary && <span className="text-[13px] text-secondary font-medium truncate">{day.areaSummary}</span>}
+                    </div>
+                    <span className="text-xs font-medium text-tertiary shrink-0">
+                      {dayItems.length} stop{dayItems.length !== 1 ? 's' : ''}
+                    </span>
+                  </button>
+
+                  {dayItems.length === 0 && (
+                    <p className="text-xs text-tertiary italic px-3 pb-2">No stops planned for this day.</p>
+                  )}
+
+                  <div className="space-y-2">
+                    {timed.map((item, idx) => {
+                      const isSel = selectedItemId === item.id;
+                      const styles = getCategoryCardStyles(item.category, isSel);
+                      const next = timed[idx + 1];
+                      let transit: { durationMin: number; distance: string; buffer: number } | null = null;
+                      if (next) {
+                        const est = getDistanceAndDuration(item, next);
+                        if (est) {
+                          const gap = parseTimeToMinutes(next.startTime) - (parseTimeToMinutes(item.startTime) + (item.estimatedDurationMin || DEFAULT_DURATION));
+                          transit = { durationMin: est.durationMin, distance: est.distance, buffer: gap - est.durationMin };
+                        }
+                      }
+
+                      return (
+                        <React.Fragment key={item.id}>
+                          {/* PlanChip — neutral surface, 14px radius, 12px padding, ≥72px, category = left accent only */}
+                          <div
+                            onClick={() => { onSelectItem(isSel ? undefined : item.id); onSelectDay(day.id); }}
+                            className={`flex gap-3 p-3 min-h-[72px] rounded-[14px] border cursor-pointer transition-colors ${styles.bg} ${styles.borderLeft} ${
+                              isSel ? 'border-[#CFE2FF] shadow-md' : 'border-border-subtle hover:border-primary/20'
+                            }`}
+                          >
+                            <div className="w-14 shrink-0 text-right">
+                              <div className="text-xs font-semibold text-on-surface tabular-nums leading-tight">{item.startTime}</div>
+                              {item.estimatedDurationMin && <div className="text-xs text-tertiary mt-0.5">{item.estimatedDurationMin}m</div>}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <h4 className="text-sm font-semibold text-on-surface truncate">{item.title}</h4>
+                              <p className="text-xs font-medium text-secondary truncate mt-0.5">
+                                {item.area}{item.budget ? ` · ${item.budget}` : ''}
+                              </p>
+                              {item.note && (
+                                <p className="text-xs text-tertiary mt-1 truncate flex items-center gap-1">
+                                  <ShieldCheck className="w-3 h-3 shrink-0" />{item.note}
+                                </p>
+                              )}
+                            </div>
+                            <div className="shrink-0 flex items-center">
+                              {item.pinState === 'hard'
+                                ? <Lock className="w-4 h-4 text-[#1F6FD6]" />
+                                : item.pinState === 'soft'
+                                ? <PushPinIcon pinned />
+                                : null}
+                            </div>
+                          </div>
+                          {transit && (
+                            <div className="flex items-center gap-1.5 pl-[4.75rem] py-1 text-xs text-secondary">
+                              <Car className="w-3.5 h-3.5 shrink-0 text-tertiary" />
+                              <span className="font-medium">{transit.durationMin}m · {transit.distance}</span>
+                              {transit.buffer < 0 && <span className="text-[#D48A00] font-semibold">· tight {Math.abs(transit.buffer)}m</span>}
+                            </div>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+
+                    {flexible.map((item) => {
+                      const isSel = selectedItemId === item.id;
+                      const styles = getCategoryCardStyles(item.category, isSel);
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => { onSelectItem(isSel ? undefined : item.id); onSelectDay(day.id); }}
+                          className={`flex gap-3 p-3 min-h-[72px] rounded-[14px] border cursor-pointer transition-colors ${styles.bg} ${styles.borderLeft} ${
+                            isSel ? 'border-[#CFE2FF] shadow-md' : 'border-border-subtle hover:border-primary/20'
+                          }`}
+                        >
+                          <div className="w-14 shrink-0 text-right text-xs font-semibold text-tertiary uppercase pt-0.5">Flex</div>
+                          <div className="min-w-0 flex-1">
+                            <h4 className="text-sm font-semibold text-on-surface truncate">{item.title}</h4>
+                            <p className="text-xs font-medium text-secondary truncate mt-0.5">{item.area}{item.budget ? ` · ${item.budget}` : ''}</p>
+                          </div>
+                          <div className="shrink-0 flex items-center">
+                            {item.pinState === 'hard' ? <Lock className="w-4 h-4 text-[#1F6FD6]" /> : item.pinState === 'soft' ? <PushPinIcon pinned /> : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

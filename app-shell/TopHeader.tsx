@@ -7,14 +7,20 @@ import { useState } from 'react';
 import { Bell, Settings, ChevronDown, Plus, FileText } from 'lucide-react';
 import PlanInitiateModal from '@/modules/trip-brief/PlanInitiateModal';
 
+const fmtDate = (d: string) => {
+  const dt = new Date(d);
+  return isNaN(dt.getTime()) ? d : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
 interface TopHeaderProps {
   onToggleViewSheet?: () => void;
   showComponentSheet?: boolean;
   currentView: 'plan' | 'trips' | 'explore';
   onViewChange: (view: 'plan' | 'trips' | 'explore') => void;
+  currentTrip?: { title: string; startDate: string; endDate: string; destination?: string };
 }
 
-export default function TopHeader({ onToggleViewSheet, showComponentSheet, currentView, onViewChange }: TopHeaderProps) {
+export default function TopHeader({ onToggleViewSheet, showComponentSheet, currentView, onViewChange, currentTrip }: TopHeaderProps) {
   const [isPlanOpen, setIsPlanOpen] = useState(false);
   const [isInitiateModalOpen, setIsInitiateModalOpen] = useState(false);
 
@@ -52,11 +58,11 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
 
             {isPlanOpen && (
               <>
-                <div 
-                  className="fixed inset-0 z-10" 
+                <div
+                  className="fixed inset-0 z-30"
                   onClick={() => setIsPlanOpen(false)}
                 />
-                <div className="absolute top-[48px] left-0 w-56 bg-white border border-border-subtle rounded-b-xl shadow-lg z-20 py-2 animate-fadeIn">
+                <div className="absolute top-[48px] left-0 w-56 bg-white border border-border-subtle rounded-b-xl shadow-lg z-40 py-2 animate-fadeIn">
                   <button 
                     onClick={() => {
                       setIsInitiateModalOpen(true);
@@ -72,27 +78,30 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
                   
                   <div className="mt-2 pt-2 border-t border-border-subtle">
                     <div className="px-3 pb-1.5 flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Planning Drafts</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Your Trips</span>
                     </div>
-                    <button 
+                    {/* The live, working example trip */}
+                    <button
                       onClick={() => {
                         onViewChange('plan');
                         setIsPlanOpen(false);
                       }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-on-surface-variant hover:bg-slate-50 transition-colors cursor-pointer text-left"
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-50 transition-colors cursor-pointer text-left group"
                     >
-                      <FileText className="w-3.5 h-3.5 text-slate-300" />
-                      Kyoto Autumn 2026
-                    </button>
-                    <button 
-                      onClick={() => {
-                        onViewChange('plan');
-                        setIsPlanOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-on-surface-variant hover:bg-slate-50 transition-colors cursor-pointer text-left"
-                    >
-                      <FileText className="w-3.5 h-3.5 text-slate-300" />
-                      Tokyo Food Sprint
+                      <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-on-surface truncate group-hover:text-primary transition-colors">
+                            {currentTrip?.title || 'Kyoto Spring 2024'}
+                          </span>
+                          <span className="text-[8px] font-bold text-primary bg-primary-soft px-1 py-0.5 rounded uppercase tracking-wide shrink-0">Current</span>
+                        </div>
+                        {currentTrip && (
+                          <span className="block text-[10px] text-secondary truncate">
+                            {currentTrip.destination ? `${currentTrip.destination} · ` : ''}{fmtDate(currentTrip.startDate)} – {fmtDate(currentTrip.endDate)}
+                          </span>
+                        )}
+                      </div>
                     </button>
                   </div>
                 </div>

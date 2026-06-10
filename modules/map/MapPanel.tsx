@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { APIProvider, Map, AdvancedMarker, InfoWindow, useMap } from '@vis.gl/react-google-maps';
 import { Coffee, Compass, MapPin } from 'lucide-react';
 import { ItineraryItem, PlaceItem } from '@/shared/types/index';
+import MapErrorBoundary from '@/shared/utils/MapErrorBoundary';
 
 interface MapPanelProps {
   items: ItineraryItem[];
@@ -177,6 +178,13 @@ export default function MapPanel({ items, selectedItemId, onSelectItem, pocketIt
   return (
     <section className="flex-1 bg-white border border-border-subtle rounded-2xl overflow-hidden relative shadow-sm flex flex-col min-h-[220px]">
       <div className="flex-1 bg-[#F1F5F9] relative overflow-hidden">
+       {/* Behind the map; visible only when the map can't draw (key invalid or quota exhausted) */}
+       <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-center p-4 pointer-events-none">
+         <MapPin className="w-6 h-6 text-slate-300" />
+         <p className="text-[11px] font-bold text-slate-400">Map preview unavailable</p>
+         <p className="text-[9px] text-slate-400 max-w-[200px] leading-relaxed">Demo Maps key is out of quota — add your own <code className="bg-slate-200 px-1 rounded">VITE_GOOGLE_MAPS_PLATFORM_KEY</code>.</p>
+       </div>
+       <MapErrorBoundary>
         <Map
           defaultCenter={{ lat: 35.0116, lng: 135.7681 }}
           defaultZoom={13}
@@ -287,6 +295,7 @@ export default function MapPanel({ items, selectedItemId, onSelectItem, pocketIt
             </InfoWindow>
           )}
         </Map>
+       </MapErrorBoundary>
 
         {mapItems.length === 0 && activePocketItems.length === 0 && (
           <div className="absolute inset-x-0 bottom-4 mx-auto max-w-[220px] bg-white border border-border-subtle rounded-full text-center py-1.5 px-3 shadow-md text-xs text-slate-500 font-medium pointer-events-none z-10">

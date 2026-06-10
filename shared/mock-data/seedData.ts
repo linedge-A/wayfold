@@ -4,8 +4,10 @@
  */
 
 import { AppState, ItineraryItem, PocketColumn, BookingRecord, TripArchiveItem } from '@/shared/types/index';
+import { ICELAND_FAMILY_ARCHIVE_ITEM } from '@/shared/mock-data/icelandFamilyTrip';
 
 export const INITIAL_TRIP_ARCHIVE: TripArchiveItem[] = [
+  ICELAND_FAMILY_ARCHIVE_ITEM,
   {
     id: 'trip-archive-1',
     title: 'Neon Nights: Tokyo Tech Tour',
@@ -92,8 +94,8 @@ export const INITIAL_ITINERARY_ITEMS: ItineraryItem[] = [
     title: 'Arrive KIX Airport',
     category: 'transit',
     area: 'Osaka/KIX',
-    lat: 40,
-    lng: 35,
+    lat: 34.4320,
+    lng: 135.2304,
     startTime: '09:00 AM',
     endTime: '11:00 AM',
     pinState: 'hard',
@@ -108,8 +110,8 @@ export const INITIAL_ITINERARY_ITEMS: ItineraryItem[] = [
     title: 'Check-in Ace Hotel',
     category: 'stay',
     area: 'Nakagyo Ward',
-    lat: 48,
-    lng: 45,
+    lat: 35.0112,
+    lng: 135.7593,
     startTime: '02:00 PM',
     endTime: '03:00 PM',
     pinState: 'none',
@@ -123,8 +125,8 @@ export const INITIAL_ITINERARY_ITEMS: ItineraryItem[] = [
     title: 'Kiyomizu-dera Temple',
     category: 'sight',
     area: 'Higashiyama District',
-    lat: 55,
-    lng: 52,
+    lat: 34.9949,
+    lng: 135.7850,
     startTime: '10:00 AM',
     endTime: '11:30 AM',
     pinState: 'none',
@@ -138,8 +140,8 @@ export const INITIAL_ITINERARY_ITEMS: ItineraryItem[] = [
     title: 'Nishiki Market Lunch',
     category: 'food',
     area: 'Central Ward',
-    lat: 47,
-    lng: 48,
+    lat: 35.0050,
+    lng: 135.7649,
     startTime: '01:00 PM',
     endTime: '02:30 PM',
     pinState: 'none',
@@ -154,8 +156,8 @@ export const INITIAL_ITINERARY_ITEMS: ItineraryItem[] = [
     title: 'Arashiyama Bamboo',
     category: 'sight',
     area: 'Arashiyama',
-    lat: 38,
-    lng: 25,
+    lat: 35.0156,
+    lng: 135.6715,
     startTime: '08:00 AM',
     endTime: '09:30 AM',
     pinState: 'none',
@@ -170,8 +172,8 @@ export const INITIAL_ITINERARY_ITEMS: ItineraryItem[] = [
     title: 'Shigetsu Zen Lunch',
     category: 'food',
     area: 'Tenryu-ji Complex',
-    lat: 30,
-    lng: 20,
+    lat: 35.0158,
+    lng: 135.6776,
     startTime: '12:30 PM',
     endTime: '02:00 PM',
     pinState: 'hard',
@@ -187,8 +189,8 @@ export const INITIAL_ITINERARY_ITEMS: ItineraryItem[] = [
     title: 'Otagi Nenbutsu-ji',
     category: 'sight',
     area: 'Arashiyama North',
-    lat: 35,
-    lng: 15,
+    lat: 35.0294,
+    lng: 135.6622,
     startTime: '03:00 PM',
     endTime: '04:30 PM',
     pinState: 'soft',
@@ -203,8 +205,8 @@ export const INITIAL_ITINERARY_ITEMS: ItineraryItem[] = [
     title: 'Fushimi Inari Gates',
     category: 'sight',
     area: 'Fushimi Ward',
-    lat: 65,
-    lng: 60,
+    lat: 34.9671,
+    lng: 135.7727,
     startTime: '09:00 AM',
     endTime: '11:00 AM',
     pinState: 'none',
@@ -219,8 +221,8 @@ export const INITIAL_ITINERARY_ITEMS: ItineraryItem[] = [
     title: 'Day Trip to Nara',
     category: 'transit',
     area: 'Nara Park',
-    lat: 75,
-    lng: 70,
+    lat: 34.6851,
+    lng: 135.8430,
     startTime: '10:00 AM',
     endTime: '04:00 PM',
     pinState: 'hard',
@@ -236,8 +238,8 @@ export const INITIAL_ITINERARY_ITEMS: ItineraryItem[] = [
     title: 'Pontocho Alley Dinner',
     category: 'food',
     area: 'Pontocho',
-    lat: 50,
-    lng: 50,
+    lat: 35.0062,
+    lng: 135.7709,
     startTime: '07:00 PM',
     endTime: '09:00 PM',
     pinState: 'none',
@@ -251,8 +253,8 @@ export const INITIAL_ITINERARY_ITEMS: ItineraryItem[] = [
     title: 'Depart for Tokyo',
     category: 'transit',
     area: 'Kyoto Station',
-    lat: 46,
-    lng: 48,
+    lat: 34.9858,
+    lng: 135.7588,
     startTime: '11:00 AM',
     endTime: '01:00 PM',
     pinState: 'hard',
@@ -278,8 +280,8 @@ export const INITIAL_POCKET: PocketColumn[] = [
         budget: '¥1,000', 
         openingHours: '8:45 AM - 5 PM', 
         imageUrl: 'https://images.unsplash.com/photo-1624238517594-5cb8d7065f4d?q=80&w=300&auto=format&fit=crop',
-        lat: 43, 
-        lng: 40 
+        lat: 35.0142,
+        lng: 135.7482
       },
       { 
         id: 'place-arashiyama-full', 
@@ -291,8 +293,8 @@ export const INITIAL_POCKET: PocketColumn[] = [
         budget: 'Free', 
         openingHours: '24 Hrs', 
         imageUrl: 'https://images.unsplash.com/photo-1549488344-1f9b8d2bd1f3?q=80&w=300&auto=format&fit=crop',
-        lat: 38, 
-        lng: 25 
+        lat: 35.0094,
+        lng: 135.6668
       }
     ]
   },
@@ -310,8 +312,8 @@ export const INITIAL_POCKET: PocketColumn[] = [
         budget: '¥1,500', 
         openingHours: '9 AM - 6 PM', 
         imageUrl: 'https://images.unsplash.com/photo-1580822184713-fc5400e7fe10?q=80&w=300&auto=format&fit=crop',
-        lat: 47, 
-        lng: 48 
+        lat: 35.0050,
+        lng: 135.7649
       },
       { 
         id: 'place-kurasu', 
@@ -323,8 +325,8 @@ export const INITIAL_POCKET: PocketColumn[] = [
         budget: '¥800', 
         openingHours: '8 AM - 6 PM', 
         imageUrl: 'https://images.unsplash.com/photo-1581009146145-b5ef03a7403f?q=80&w=300&auto=format&fit=crop',
-        lat: 45, 
-        lng: 46 
+        lat: 34.9875,
+        lng: 135.7570
       }
     ]
   }

@@ -11,14 +11,22 @@ import { INITIAL_TRIP_ARCHIVE } from '@/shared/mock-data/seedData';
 import { motion } from 'motion/react';
 import { Map, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
 import { useEffect, useMemo } from 'react';
+import MapErrorBoundary from '@/shared/utils/MapErrorBoundary';
 
 interface TripsPageProps {
   currentTrip?: TripBrief;
+  stopCount?: number;
   onViewChange?: (view: 'plan' | 'trips' | 'explore') => void;
+  onOpenTrip?: () => void;
   onShare?: (trip: any) => void;
 }
 
-export default function TripsPage({ currentTrip, onViewChange, onShare }: TripsPageProps) {
+const formatTripDate = (d: string) => {
+  const dt = new Date(d);
+  return isNaN(dt.getTime()) ? d : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+export default function TripsPage({ currentTrip, stopCount, onViewChange, onOpenTrip, onShare }: TripsPageProps) {
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'past' | 'draft'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -28,14 +36,14 @@ export default function TripsPage({ currentTrip, onViewChange, onShare }: TripsP
       id: currentTrip.id,
       title: currentTrip.title,
       destination: currentTrip.destination,
-      startDate: currentTrip.startDate,
-      endDate: currentTrip.endDate,
-      stopCount: 0, // In a real app we'd count the stops in itineraryDays
+      startDate: formatTripDate(currentTrip.startDate),
+      endDate: formatTripDate(currentTrip.endDate),
+      stopCount: stopCount ?? 0,
       status: 'upcoming' as const,
-      imageUrl: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?q=80&w=600&auto=format&fit=crop',
+      imageUrl: currentTrip.image || 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?q=80&w=600&auto=format&fit=crop',
       participants: ['usr-1']
     };
-  }, [currentTrip]);
+  }, [currentTrip, stopCount]);
 
   const allTrips = useMemo(() => {
     const archive = [...INITIAL_TRIP_ARCHIVE];
@@ -111,9 +119,7 @@ export default function TripsPage({ currentTrip, onViewChange, onShare }: TripsP
                   <TripArchiveCard 
                     key={trip.id} 
                     trip={trip} 
-                    onClick={() => {
-                      if (onViewChange) onViewChange('plan');
-                    }}
+                    onClick={() => onOpenTrip?.()}
                     onShare={onShare}
                   />
                 ))}
@@ -144,9 +150,7 @@ export default function TripsPage({ currentTrip, onViewChange, onShare }: TripsP
                   <TripArchiveCard 
                     key={trip.id} 
                     trip={trip} 
-                    onClick={() => {
-                      if (onViewChange) onViewChange('plan');
-                    }}
+                    onClick={() => onOpenTrip?.()}
                     onShare={onShare}
                   />
                 ))}
@@ -177,36 +181,51 @@ export default function TripsPage({ currentTrip, onViewChange, onShare }: TripsP
         </div>
 
         {/* Real Google Map for Archive */}
-        <div className="flex-1 w-full bg-[#eef2f8] animate-fadeIn">
-          <Map
-            defaultCenter={{ lat: 30, lng: 130 }}
-            defaultZoom={3}
-            mapId="TRIPS_ARCHIVE_MAP"
-            disableDefaultUI={true}
-            gestureHandling={'greedy'}
-            internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
-          >
-            <MapBoundsFitter points={mapPoints} />
-            
-            {allTrips.map((trip) => {
-              const coords = cityCoords[trip.destination.split(',')[0].trim()];
-              if (!coords) return null;
-              
-              const isUpcoming = trip.status === 'upcoming';
-              return (
-                <AdvancedMarker key={trip.id} position={coords}>
-                  <div className="relative group">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 border-white shadow-lg transition-transform group-hover:scale-110 ${isUpcoming ? 'bg-primary text-white' : 'bg-emerald-500 text-white'}`}>
-                      <Compass className="w-4 h-4" />
+        <div className="flex-1 w-full bg-[#eef2f8] animate-fadeIn relative">
+          {/* Sits behind the map; visible only when the map can't draw (no/invalid key or quota) */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center p-6 pointer-events-none">
+            <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400">
+              <MapPin className="w-6 h-6" />
+            </div>
+            <p className="text-sm font-bold text-slate-500">Map preview unavailable</p>
+            <p className="text-[11px] text-slate-400 max-w-[260px] leading-relaxed">
+              Add a billing-enabled Google Maps key to{' '}
+              <code className="bg-slate-200 px-1 rounded font-mono">VITE_GOOGLE_MAPS_PLATFORM_KEY</code>.
+              The bundled demo key is out of daily quota.
+            </p>
+          </div>
+          <MapErrorBoundary>
+            <Map
+              defaultCenter={{ lat: 30, lng: 130 }}
+              defaultZoom={3}
+              mapId="DEMO_MAP_ID"
+              disableDefaultUI={true}
+              gestureHandling={'greedy'}
+              style={{ width: '100%', height: '100%' }}
+              internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
+            >
+              <MapBoundsFitter points={mapPoints} />
+
+              {allTrips.map((trip) => {
+                const coords = cityCoords[trip.destination.split(',')[0].trim()];
+                if (!coords) return null;
+
+                const isUpcoming = trip.status === 'upcoming';
+                return (
+                  <AdvancedMarker key={trip.id} position={coords}>
+                    <div className="relative group">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 border-white shadow-lg transition-transform group-hover:scale-110 ${isUpcoming ? 'bg-primary text-white' : 'bg-emerald-500 text-white'}`}>
+                        <Compass className="w-4 h-4" />
+                      </div>
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white px-2 py-1 rounded shadow-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                        <p className="text-[10px] font-bold text-on-surface">{trip.title}</p>
+                      </div>
                     </div>
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white px-2 py-1 rounded shadow-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                      <p className="text-[10px] font-bold text-on-surface">{trip.title}</p>
-                    </div>
-                  </div>
-                </AdvancedMarker>
-              );
-            })}
-          </Map>
+                  </AdvancedMarker>
+                );
+              })}
+            </Map>
+          </MapErrorBoundary>
         </div>
 
         <div className="absolute bottom-6 left-6 pointer-events-none">

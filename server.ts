@@ -13,7 +13,7 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-const PORT = 3000;
+const PORT = 4123;
 
 // Initialize Google Gen AI client with server key if present
 let ai: GoogleGenAI | null = null;
@@ -93,15 +93,37 @@ app.post('/api/copilot', async (req, res) => {
       const MAX_QUERY_LENGTH = 2000;
       const safeQuery = String(query || '').slice(0, MAX_QUERY_LENGTH);
 
-      const response = await ai.models.generateContent({
+      const requestParams = {
         model: process.env.GEMINI_FLASH_MODEL || 'gemini-flash-latest',
         contents: safeQuery,
         config: {
           systemInstruction: systemInstruction,
           temperature: 0.2,
-          tools: [{ googleSearch: {} }]
+          // Google Search grounding requires a higher tier and burns quota quickly;
+          // enable via env only when the key's plan supports it.
+          ...(process.env.GEMINI_ENABLE_SEARCH === 'true' ? { tools: [{ googleSearch: {} }] } : {})
         }
-      });
+      };
+
+      // Retry transient overload / rate spikes (503 UNAVAILABLE, 429) with exponential backoff.
+      let response: any;
+      let lastErr: any;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          response = await ai.models.generateContent(requestParams);
+          lastErr = null;
+          break;
+        } catch (e: any) {
+          lastErr = e;
+          const status = e?.status;
+          if (status === 503 || status === 429) {
+            await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt))); // 0.5s, 1s, 2s, 4s
+            continue;
+          }
+          throw e;
+        }
+      }
+      if (!response) throw lastErr;
 
       const responseText = response.text || '';
       

@@ -51,8 +51,12 @@ interface PlaceItem {
   tripRole?: 'anchor' | 'supporting' | 'optional'
   reservationBound?: boolean
   tags?: string[]
+  group?: string   // user/paste-time organizing cluster for the Research Pocket (set at ingestion). DISTINCT from `area`: `area` is the POI's canonical geography; `group` is how the user filed it (which paste / day / theme), which may span areas or split one area across days.
 }
 ```
+> `group` added by the unified-pocket work (Agent 5, with Agent 9 contract notice). Optional & additive — existing producers/consumers are unaffected; the pocket falls back to `area` when it is absent.
+>
+> **Why a dedicated field, not `area` or `tags`:** `area` is per-POI geography (one value, canonical) and must stay stable for the map/optimizer; it can't double as a mutable user filing label. `tags` is an unordered keyword *set* with no single-cluster semantics, so it can't drive a one-column-per-group view. `group` is the single organizing key the pocket groups by. It currently mirrors `area` only because ingestion seeds it from the paste's area hint; once per-day paste / manual re-filing land, `group` diverges from `area` (its reason for existing).
 
 ### ItineraryItem
 ```ts
@@ -84,13 +88,34 @@ interface BookingRecord {
   title: string
   category: 'hotel' | 'restaurant' | 'ticket' | 'transport'
   confirmationCode?: string
-  confirmed: boolean
+  confirmed: boolean                 // canonical binary flag (kept); invariant below
   cancelable?: boolean
-  linkedItemId?: string
+  linkedItemId?: string              // @deprecated — prefer linkedItemIds; == linkedItemIds[0] when both set
   date?: string
   time?: string
+
+  // Extended (optional, additive) — parsed bookings, ingestion lane
+  status?: 'confirmed' | 'cancelled' | 'changed' | 'pending'
+  vendor?: string
+  linkedItemIds?: string[]           // one booking → several anchors (multi-leg / multi-night)
+  startISO?: string                  // ISO 8601 + offset; supersedes date/time when known
+  endISO?: string
+  timezone?: string                  // IANA, e.g. "Asia/Tokyo"
+  from?: string                      // transport origin (IATA/station)
+  to?: string                        // transport destination
+  seatOrRoom?: string
+  party?: number
+  price?: string
+  sourceEmailId?: string             // idempotent re-import + cancellation match
 }
 ```
+
+**Agent 9 decisions (re: PR #5 contract proposal):**
+- `category` enum is **not** expanded — `from`/`to` disambiguate flight/rail/car within `'transport'`.
+- `confirmed` is **kept** (actively consumed); `status` is the richer state. Invariant when both set: `confirmed === (status === 'confirmed')`.
+- `linkedItemId` **kept** for back-compat; `linkedItemIds?: string[]` added for multi-segment. When both present, `linkedItemId === linkedItemIds[0]`.
+- All additions are optional → zero breakage; existing `INITIAL_BOOKINGS` are unaffected.
+- A `status` of `'cancelled'`/`'changed'` should unlock the linked anchor(s) and emit `PLAN_REVISED`.
 
 ### RevisionDelta
 ```ts
