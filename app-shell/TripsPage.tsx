@@ -96,15 +96,7 @@ export default function TripsPage({ currentTrip, onViewChange, onShare, onLoadTr
     <div className="flex h-full w-full bg-slate-50 overflow-hidden">
       {/* Left List Panel */}
       <aside className="w-[520px] bg-white border-r border-border-subtle flex flex-col h-full shrink-0">
-        <div className="p-6 border-b border-border-subtle">
-          <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-bold text-on-surface tracking-tight">Trip Archive</h1>
-            <button className="flex items-center gap-2 bg-primary text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:opacity-90 active:scale-95 transition-all cursor-pointer">
-              <Plus className="w-4 h-4" />
-              New Trip
-            </button>
-          </div>
-
+        <div className="p-4 border-b border-border-subtle flex items-center justify-between gap-3">
           <div className="flex gap-1 bg-slate-100 p-1 rounded-full w-fit">
             {(['all', 'upcoming', 'past', 'draft'] as const).map(f => (
               <button
@@ -118,6 +110,10 @@ export default function TripsPage({ currentTrip, onViewChange, onShare, onLoadTr
               </button>
             ))}
           </div>
+          <button className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-accent-primary-hover active:scale-95 transition-all cursor-pointer shrink-0">
+            <Plus className="w-4 h-4" />
+            New Trip
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
