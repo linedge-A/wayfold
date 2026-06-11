@@ -459,10 +459,8 @@ export default function ItineraryPanel({
           header band now; this row keeps the per-view controls: day navigation centered (day
           view), and the view switcher + share + add right-aligned across all views. */}
       <div className="h-[38px] border-b border-border-subtle flex items-center justify-between px-3 bg-white shrink-0 select-none relative">
-        <div className="w-8 shrink-0" />
-
-        {viewType === 'day' && (
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2">
+        {viewType === 'day' ? (
+          <div className="flex-1 flex items-center justify-center gap-2 min-w-0">
             <button
               type="button"
               onClick={handlePrevDay}
@@ -485,9 +483,9 @@ export default function ItineraryPanel({
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-        )}
+        ) : <div className="flex-1" />}
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
           {/* View switcher — right-aligned */}
           <div className="relative shrink-0">
             <button
@@ -766,7 +764,7 @@ export default function ItineraryPanel({
                           e.dataTransfer.dropEffect = 'move';
                         }}
                         className={`${
-                          isDraggingThis ? 'pointer-events-none opacity-40 select-none' :
+                          isDraggingThis ? 'opacity-40 select-none cursor-grabbing' :
                           isDraggingOther ? 'pointer-events-none opacity-30 select-none' : 'pointer-events-auto cursor-grab active:cursor-grabbing hover:scale-[1.005] hover:shadow'
                         } p-1.5 rounded-r-xl border transition-all group flex flex-col justify-between ${styles.bg} ${styles.border} ${styles.borderLeft} ${
                           isSelected ? 'ring-1 ring-primary/25 shadow-md scale-[1.01]'
