@@ -339,3 +339,35 @@ export function optimizeSchedule(
     backtrackEliminated: finalTransit < origTransit,
   };
 }
+
+export interface DayFit {
+  dayId: string;
+  result: OptimizationResult;
+  addedTransitMin: number;   // extra driving the insertion costs that day (lower = better fit)
+  forcesRemoval: boolean;    // the day was congested enough to propose dropping a stop
+}
+
+/**
+ * Make-up recovery: given a missed/loose item and a set of candidate days, run the single-insert
+ * optimizer on each and return the BEST-fitting day — the one whose schedule absorbs the stop with
+ * the least added transit. Reuses `optimizeSchedule` (no new placement logic). Prefers days that
+ * don't have to drop anything; only falls back to a congested day if every candidate would.
+ * Returns null if there are no candidate days.
+ */
+export function findBestDayFit(
+  item: PlaceItem,
+  allItems: ItineraryItem[],
+  candidateDayIds: string[],
+): DayFit | null {
+  let bestClean: DayFit | null = null;   // best day that drops nothing
+  let bestAny: DayFit | null = null;     // best overall (fallback)
+  for (const dayId of candidateDayIds) {
+    const result = optimizeSchedule(item, allItems, dayId);
+    const addedTransitMin = result.newTransitTotalMin - result.originalTransitTotalMin;
+    const forcesRemoval = result.proposedChanges.some(c => c.type === 'remove');
+    const fit: DayFit = { dayId, result, addedTransitMin, forcesRemoval };
+    if (!bestAny || addedTransitMin < bestAny.addedTransitMin) bestAny = fit;
+    if (!forcesRemoval && (!bestClean || addedTransitMin < bestClean.addedTransitMin)) bestClean = fit;
+  }
+  return bestClean ?? bestAny;
+}

@@ -18,7 +18,7 @@ import PocketPanel from '@/modules/pocket/PocketPanel';
 import CopilotPanel from '@/modules/copilot/CopilotPanel';
 import FocusModeSplash from './FocusModeSplash';
 import SourceOfTruthSheet from './SourceOfTruthSheet';
-import { optimizeSchedule, OptimizationResult, ProposedChange } from '@/modules/constraint-engine/optimizer';
+import { optimizeSchedule, OptimizationResult, ProposedChange, findBestDayFit } from '@/modules/constraint-engine/optimizer';
 import OptimizeScheduleModal from '@/modules/constraint-engine/OptimizeScheduleModal';
 import TripsPage from './TripsPage';
 import ExplorePage from './ExplorePage';
@@ -512,6 +512,80 @@ function AppContent() {
         itineraryItems: prev.itineraryItems.filter(item => item.id !== id),
         revisionDeltas: [newDelta, ...prev.revisionDeltas]
       };
+    });
+  };
+
+  // Mark a stop as missed — a planner can't auto-detect this (no GPS/check-ins), so it's a manual
+  // user action. The stop stays in place but muted, and surfaces a one-click make-up recovery.
+  const handleMarkMissed = (id: string) => {
+    const item = appState.itineraryItems.find(i => i.id === id);
+    if (!item) return;
+    setAppState(prev => {
+      const newDelta: RevisionDelta = {
+        id: 'delta-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9),
+        type: 'makeup',
+        itemTitle: item.title,
+        note: 'Marked as missed — ready to find a make-up slot.',
+      };
+      return {
+        ...prev,
+        itineraryItems: prev.itineraryItems.map(i =>
+          i.id === id ? { ...i, status: 'missed' as const, pinState: 'none' as const } : i
+        ),
+        revisionDeltas: [newDelta, ...prev.revisionDeltas],
+      };
+    });
+  };
+
+  // One-click make-up: reuse the single-insert optimizer across every LATER day, pick the best fit,
+  // move the stop there, and log a "make-up" revision delta (undoable via the revision summary).
+  const handleFindBestFit = (id: string) => {
+    const item = appState.itineraryItems.find(i => i.id === id);
+    if (!item) return;
+    const fromIdx = appState.itineraryDays.findIndex(d => d.id === item.dayId);
+    const laterDayIds = appState.itineraryDays.slice(fromIdx + 1).map(d => d.id);
+    const sayNoFit = (text: string) => setMessages(prev => [...prev, {
+      id: 'ai-makeup-' + Date.now(), sender: 'ai' as const, text, timestamp: 'Just now',
+    }]);
+    if (laterDayIds.length === 0) {
+      sayNoFit(`"${item.title}" is on the last day, so there's no later day to make it up. Drag it to an open slot, or extend the trip.`);
+      return;
+    }
+    const fit = findBestDayFit(item, appState.itineraryItems, laterDayIds);
+    if (!fit) {
+      sayNoFit(`I couldn't find a make-up slot for "${item.title}" on the remaining days.`);
+      return;
+    }
+    // Index proposed changes by the item they target (insert = the moved stop; shifts = that day's
+    // other stops). itemData holds the new dayId/startTime/endTime. NB: plain object, not Map() —
+    // `Map` is shadowed by the lucide-react Map icon imported in this file.
+    const changeByItemId: Record<string, ItineraryItem> = {};
+    for (const c of fit.result.proposedChanges) changeByItemId[c.itemId] = c.itemData;
+    const targetDay = appState.itineraryDays.find(d => d.id === fit.dayId);
+    setAppState(prev => {
+      const items = prev.itineraryItems.map(i => {
+        const data = changeByItemId[i.id];
+        if (!data) return i;
+        const isMoved = i.id === id;
+        return {
+          ...i,
+          dayId: data.dayId,
+          startTime: data.startTime,
+          endTime: data.endTime,
+          ...(isMoved ? { status: 'makeup' as const } : {}),
+        };
+      });
+      const movedScheduled = changeByItemId[id];
+      const newDelta: RevisionDelta = {
+        id: 'delta-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9),
+        type: 'makeup',
+        itemTitle: item.title,
+        to: `${targetDay?.label ?? 'later'} ${movedScheduled?.startTime ?? ''}`.trim(),
+        note: fit.forcesRemoval
+          ? `Made up on ${targetDay?.fullDateString ?? 'a later day'} (day was tight).`
+          : `Best fit found on ${targetDay?.fullDateString ?? 'a later day'} — +${fit.addedTransitMin}m transit.`,
+      };
+      return { ...prev, itineraryItems: items, selectedDayId: fit.dayId, revisionDeltas: [newDelta, ...prev.revisionDeltas] };
     });
   };
 
@@ -1215,6 +1289,8 @@ function AppContent() {
                 onSetViewType={setViewType}
                 onUpdateItemTime={handleUpdateItemTime}
                 onPromotePocketItemToTime={handlePromotePocketItemToTime}
+                onMarkMissed={handleMarkMissed}
+                onFindBestFit={handleFindBestFit}
                 onShare={() => handleOpenShare()}
               />
             </div>
@@ -1242,6 +1318,8 @@ function AppContent() {
                 onSetViewType={setViewType}
                 onUpdateItemTime={handleUpdateItemTime}
                 onPromotePocketItemToTime={handlePromotePocketItemToTime}
+                onMarkMissed={handleMarkMissed}
+                onFindBestFit={handleFindBestFit}
                 onShare={() => handleOpenShare()}
               />
             </div>

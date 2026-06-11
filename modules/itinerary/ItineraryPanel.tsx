@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, FormEvent, DragEvent } from 'react';
-import { Calendar, Pin, Lock, MapPin, Clock, Plus, Trash2, ShieldCheck, ChevronLeft, ChevronRight, Menu, ChevronDown, X, Car, ExternalLink, Sparkles, Share2 } from 'lucide-react';
+import { Calendar, Pin, Lock, MapPin, Clock, Plus, Trash2, ShieldCheck, ChevronLeft, ChevronRight, Menu, ChevronDown, X, Car, ExternalLink, Sparkles, Share2, CircleSlash } from 'lucide-react';
 import { ItineraryDay, ItineraryItem } from '@/shared/types/index';
 import GooglePlaceDetailsCard from '@/shared/utils/GooglePlaceDetailsCard';
 import { haversineKm } from '@/shared/utils/geo';
@@ -199,6 +199,8 @@ interface ItineraryPanelProps {
   onSetViewType: (type: 'day' | 'week' | 'month') => void;
   onUpdateItemTime?: (id: string, newTime: string) => void;
   onPromotePocketItemToTime?: (placeItem: any, timeStr: string) => void;
+  onMarkMissed?: (id: string) => void;
+  onFindBestFit?: (id: string) => void;
   onShare?: () => void;
 }
 
@@ -220,6 +222,8 @@ export default function ItineraryPanel({
   onSetViewType,
   onUpdateItemTime,
   onPromotePocketItemToTime,
+  onMarkMissed,
+  onFindBestFit,
   onShare
 }: ItineraryPanelProps) {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -855,6 +859,7 @@ export default function ItineraryPanel({
                     const styles = getCategoryCardStyles(item.category, isSelected);
                     const isMovingThis = chipDrag?.itemId === item.id;
                     const isMovingOther = chipDrag !== null && !isMovingThis;
+                    const isMissed = item.status === 'missed';
                     // While dragging, the chip follows the live snapped preview position.
                     const liveTop = isMovingThis
                       ? (chipDrag!.startMin - START_MINUTES_C) * MINUTE_HEIGHT
@@ -879,6 +884,8 @@ export default function ItineraryPanel({
                           isMovingThis ? 'pointer-events-auto select-none cursor-grabbing ring-2 ring-primary/50 shadow-lg' :
                           isMovingOther ? 'pointer-events-none opacity-30 select-none' : 'pointer-events-auto cursor-grab hover:scale-[1.005] hover:shadow'
                         } p-1.5 rounded-r-xl border ${isMovingThis ? '' : 'transition-all'} group flex flex-col justify-between ${styles.bg} ${styles.border} ${styles.borderLeft} ${
+                          isMissed ? 'opacity-60 saturate-50' : ''
+                        } ${
                           isSelected ? 'ring-1 ring-primary/25 shadow-md scale-[1.01]'
                             : isHovered && !isMovingThis ? 'ring-1 ring-primary/40 shadow-md' : 'shadow-sm'
                         }`}
@@ -891,9 +898,14 @@ export default function ItineraryPanel({
                         <div className="flex flex-col h-full justify-between">
                           <div className="flex justify-between items-start gap-1">
                             <div>
-                              <h3 className={`text-xs font-bold leading-tight ${styles.text}`}>
+                              <h3 className={`text-xs font-bold leading-tight ${styles.text} ${isMissed ? 'line-through decoration-slate-400/70' : ''}`}>
                                 {item.title}
                               </h3>
+                              {isMissed && (
+                                <span className="inline-flex items-center gap-0.5 mt-0.5 text-[8px] font-bold uppercase tracking-wide text-amber-600 bg-amber-50 border border-amber-200 rounded px-1 py-px select-none">
+                                  <CircleSlash className="w-2.5 h-2.5" /> missed
+                                </span>
+                              )}
                               {height >= 80 && item.note && (
                                 <p className="text-[10px] italic text-blue-600 mt-1 leading-snug flex items-center gap-1">
                                   <ShieldCheck className="w-3 h-3 shrink-0" />
@@ -901,46 +913,73 @@ export default function ItineraryPanel({
                                 </p>
                               )}
                             </div>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onRemoveItem(item.id);
-                              }}
-                              className="p-1 rounded-md hover:bg-black/5 opacity-40 hover:opacity-100 text-slate-500 hover:text-red-500 transition-all cursor-pointer shrink-0 -mt-0.5 -mr-0.5"
-                              title="Remove stop"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center shrink-0 -mt-0.5 -mr-0.5">
+                              {!isMissed && onMarkMissed && (
+                                <button
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => { e.stopPropagation(); onMarkMissed(item.id); }}
+                                  className="p-1 rounded-md hover:bg-black/5 opacity-0 group-hover:opacity-50 hover:!opacity-100 text-slate-500 hover:text-amber-600 transition-all cursor-pointer"
+                                  title="Mark as missed"
+                                >
+                                  <CircleSlash className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              <button
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onRemoveItem(item.id);
+                                }}
+                                className="p-1 rounded-md hover:bg-black/5 opacity-40 hover:opacity-100 text-slate-500 hover:text-red-500 transition-all cursor-pointer"
+                                title="Remove stop"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
 
                           <div className="flex justify-between items-end gap-2 mt-1">
-                            {item.subCategory || item.budget || item.openingHours ? (
-                              <div className="text-[9px] text-slate-450 font-medium flex-1 flex flex-wrap items-center gap-1 leading-tight pointer-events-none truncate select-none">
-                                {item.subCategory && <span className="font-semibold text-slate-500">{item.subCategory}</span>}
-                                {item.budget && <span className="bg-slate-100 text-slate-500 px-0.5 rounded-sm text-[8px] font-bold">{item.budget}</span>}
-                                {item.openingHours && <span className="text-slate-400 truncate">{item.openingHours}</span>}
-                                {item.estimatedDurationMin && <span className="text-slate-450 opacity-60">• {item.estimatedDurationMin}m</span>}
-                              </div>
+                            {isMissed && onFindBestFit ? (
+                              <button
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => { e.stopPropagation(); onFindBestFit(item.id); }}
+                                className="flex-1 flex items-center justify-center gap-1 px-2 py-0.5 rounded-md bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-bold transition-all cursor-pointer pointer-events-auto"
+                                title="Find the best later day for this stop"
+                              >
+                                <Sparkles className="w-3 h-3 shrink-0" /> Find best fit
+                              </button>
                             ) : (
-                              <span className="text-[10px] text-slate-500 font-medium truncate flex-1 block">
-                                {item.area} {item.estimatedDurationMin ? `• ${item.estimatedDurationMin}m` : ''}
-                              </span>
+                              <>
+                                {item.subCategory || item.budget || item.openingHours ? (
+                                  <div className="text-[9px] text-slate-450 font-medium flex-1 flex flex-wrap items-center gap-1 leading-tight pointer-events-none truncate select-none">
+                                    {item.subCategory && <span className="font-semibold text-slate-500">{item.subCategory}</span>}
+                                    {item.budget && <span className="bg-slate-100 text-slate-500 px-0.5 rounded-sm text-[8px] font-bold">{item.budget}</span>}
+                                    {item.openingHours && <span className="text-slate-400 truncate">{item.openingHours}</span>}
+                                    {item.estimatedDurationMin && <span className="text-slate-450 opacity-60">• {item.estimatedDurationMin}m</span>}
+                                  </div>
+                                ) : (
+                                  <span className="text-[10px] text-slate-500 font-medium truncate flex-1 block">
+                                    {item.area} {item.estimatedDurationMin ? `• ${item.estimatedDurationMin}m` : ''}
+                                  </span>
+                                )}
+                                <button
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCyclePinState(item);
+                                  }}
+                                  className="p-1 rounded-md hover:bg-black/5 transition-all text-slate-500 shrink-0 cursor-pointer -mb-0.5 -mr-0.5"
+                                  title="Cycle Pin/Lock State"
+                                >
+                                  {item.pinState === 'hard' ? (
+                                  <Lock className="w-3.5 h-3.5 text-[#1F6FD6]" />
+                                ) : (
+                                  <PushPinIcon pinned={item.pinState === 'soft'} className={item.pinState === 'soft' ? 'animate-bounce' : ''} />
+                                )}
+                                </button>
+                              </>
                             )}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleCyclePinState(item);
-                              }}
-                              className="p-1 rounded-md hover:bg-black/5 transition-all text-slate-500 shrink-0 cursor-pointer -mb-0.5 -mr-0.5"
-                              title="Cycle Pin/Lock State"
-                            >
-                              {item.pinState === 'hard' ? (
-                              <Lock className="w-3.5 h-3.5 text-[#1F6FD6]" />
-                            ) : (
-                              <PushPinIcon pinned={item.pinState === 'soft'} className={item.pinState === 'soft' ? 'animate-bounce' : ''} />
-                            )}
-                          </button>
-                        </div>
+                          </div>
                       </div>
                     </div>
                   );
