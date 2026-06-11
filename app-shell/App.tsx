@@ -116,6 +116,29 @@ function AppContent() {
   // CopilotPanel tiered "Apply" card (#27) instead of auto-applying.
   const [pendingChanges, setPendingChanges] = useState<Record<string, { base?: ItineraryItem[]; updatedItems?: ItineraryItem[]; updatedPocket?: any[]; deltas?: RevisionDelta[] }>>({});
 
+  // "Last revised" timestamp for the header — restamped whenever the revision log changes.
+  const [lastRevisedAt, setLastRevisedAt] = useState<number>(Date.now());
+  useEffect(() => { setLastRevisedAt(Date.now()); }, [appState.revisionDeltas]);
+
+  // Start over: reset the workspace to the seeded sample trip (destructive → confirm first).
+  const handleStartOver = () => {
+    if (typeof window !== 'undefined' && !window.confirm('Start over? This clears the current plan and reverts to the sample Kyoto trip.')) return;
+    setAppState({
+      tripBrief: INITIAL_TRIP_BRIEF,
+      itineraryDays: INITIAL_DAYS,
+      itineraryItems: INITIAL_ITINERARY_ITEMS,
+      pocket: INITIAL_POCKET,
+      bookings: INITIAL_BOOKINGS,
+      selectedDayId: 'day-3',
+      selectedItemId: undefined,
+      revisionDeltas: INITIAL_REVISION_DELTAS,
+      currentView: 'plan',
+    });
+    setMessages(INITIAL_MESSAGES);
+    setPendingChanges({});
+    setLastRevisedAt(Date.now());
+  };
+
   // Optimization Modal state hooks
   const [optimizingItem, setOptimizingItem] = useState<PlaceItem | null>(null);
   const [optimizationResult, setOptimizationResult] = useState<OptimizationResult | null>(null);
@@ -1051,6 +1074,10 @@ function AppContent() {
           pool={placeItemsToPool(appState.pocket, { scheduledIds: appState.itineraryItems.map(i => i.id) })}
           onGenerated={handleGenerated}
           onLoadTrip={handleLoadTrip}
+          tripBrief={appState.tripBrief}
+          onRegenerate={handleRegenerate}
+          onStartOver={handleStartOver}
+          lastRevisedAt={lastRevisedAt}
         />
 
         {/* Adaptive Mobile Workspace Navigation Tab bar */}
