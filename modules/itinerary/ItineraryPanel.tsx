@@ -3,11 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, FormEvent, DragEvent } from 'react';
+import React, { useState, useEffect, useRef, useCallback, FormEvent, DragEvent } from 'react';
 import { Calendar, Pin, Lock, MapPin, Clock, Plus, Trash2, ShieldCheck, ChevronLeft, ChevronRight, Menu, ChevronDown, X, Car, ExternalLink, Sparkles, Share2 } from 'lucide-react';
 import { ItineraryDay, ItineraryItem } from '@/shared/types/index';
 import GooglePlaceDetailsCard from '@/shared/utils/GooglePlaceDetailsCard';
 import { haversineKm } from '@/shared/utils/geo';
+import { fromMinutes } from '@/shared/utils/temporal';
 
 
 const PushPinIcon = ({ className, pinned }: { className?: string; pinned: boolean }) => {
@@ -237,6 +238,64 @@ export default function ItineraryPanel({
       document.removeEventListener('drop', reset);
     };
   }, []);
+
+  // ── Pointer-based chip drag (restored from the proven WIP rewrite) ────────────────────────────
+  // HTML5 drag on the timed chips proved unreliable (drag wouldn't initiate at all in Chrome), so
+  // chips re-time via pointer events: pointerdown on a chip → pointermove tracks a snapped live
+  // preview → pointerup commits via onUpdateItemTime (or treats a no-move release as select).
+  // Pocket→calendar drops are untouched — pocket cards still use HTML5 drag onto the hour cells.
+  const SNAP_MINUTES = 15;
+  const START_MINUTES_C = START_HOUR * 60;
+  const MAX_MINUTES = (END_HOUR + 1) * 60;
+  const snapMin = (m: number) => Math.round(m / SNAP_MINUTES) * SNAP_MINUTES;
+  type ChipDrag = { itemId: string; startMin: number; durationMin: number; grabOffsetMin: number; pointerStartY: number; moved: boolean };
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const chipDragRef = useRef<ChipDrag | null>(null);
+  const [chipDrag, setChipDrag] = useState<ChipDrag | null>(null);
+
+  const handleChipPointerMove = useCallback((e: PointerEvent) => {
+    const d = chipDragRef.current;
+    const rect = gridRef.current?.getBoundingClientRect();
+    if (!d || !rect) return;
+    const raw = START_MINUTES_C + (e.clientY - rect.top) / MINUTE_HEIGHT;
+    let start = snapMin(raw - d.grabOffsetMin);
+    start = Math.max(START_MINUTES_C, Math.min(MAX_MINUTES - d.durationMin, start));
+    const next = { ...d, startMin: start, moved: d.moved || Math.abs(e.clientY - d.pointerStartY) > 4 };
+    chipDragRef.current = next;
+    setChipDrag(next);
+  }, []);
+
+  const handleChipPointerUp = useCallback(() => {
+    window.removeEventListener('pointermove', handleChipPointerMove);
+    const d = chipDragRef.current;
+    chipDragRef.current = null;
+    setChipDrag(null);
+    if (!d) return;
+    if (d.moved) onUpdateItemTime?.(d.itemId, fromMinutes(d.startMin));
+    else onSelectItem(selectedItemId === d.itemId ? undefined : d.itemId);
+  }, [handleChipPointerMove, onUpdateItemTime, onSelectItem, selectedItemId]);
+
+  const handleChipPointerDown = (e: React.PointerEvent, item: ItineraryItem) => {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest('button, a, input')) return; // inner controls keep working
+    const rect = gridRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    e.preventDefault();
+    const pointerMin = START_MINUTES_C + (e.clientY - rect.top) / MINUTE_HEIGHT;
+    const startMin = parseTimeToMinutes(item.startTime);
+    const durationMin = item.estimatedDurationMin || 60;
+    const d: ChipDrag = { itemId: item.id, startMin, durationMin, grabOffsetMin: pointerMin - startMin, pointerStartY: e.clientY, moved: false };
+    chipDragRef.current = d;
+    setChipDrag(d);
+    window.addEventListener('pointermove', handleChipPointerMove);
+    window.addEventListener('pointerup', handleChipPointerUp, { once: true });
+  };
+  // Unmount safety: never leave window listeners behind mid-drag.
+  useEffect(() => () => {
+    window.removeEventListener('pointermove', handleChipPointerMove);
+    window.removeEventListener('pointerup', handleChipPointerUp);
+  }, [handleChipPointerMove, handleChipPointerUp]);
+
   const [newTitle, setNewTitle] = useState('');
   const [newTime, setNewTime] = useState('09:00 AM');
   const [newCategory, setNewCategory] = useState<'sight' | 'food' | 'stay' | 'transit'>('sight');
@@ -654,8 +713,9 @@ export default function ItineraryPanel({
             {/* Real Calendar Grid View */}
             <div className="relative overflow-visible w-full px-1">
 
-              <div 
-                className="relative" 
+              <div
+                ref={gridRef}
+                className="relative"
                 style={{ height: `${(END_HOUR - START_HOUR + 1) * HOUR_HEIGHT}px` }}
                 onDragOver={(e) => {
                   e.preventDefault();
@@ -727,50 +787,41 @@ export default function ItineraryPanel({
                     const isSelected = selectedItemId === item.id;
                     const isHovered = hoveredItemId === item.id;
                     const styles = getCategoryCardStyles(item.category, isSelected);
-                    const topVal = Math.max(0, Math.min(top, (END_HOUR - START_HOUR + 1) * HOUR_HEIGHT - height));
-                    const isDraggingThis = draggingItemId === item.id;
-                    const isDraggingOther = draggingItemId !== null && !isDraggingThis;
+                    const isMovingThis = chipDrag?.itemId === item.id;
+                    const isMovingOther = chipDrag !== null && !isMovingThis;
+                    // While dragging, the chip follows the live snapped preview position.
+                    const liveTop = isMovingThis
+                      ? (chipDrag!.startMin - START_MINUTES_C) * MINUTE_HEIGHT
+                      : Math.max(0, Math.min(top, (END_HOUR - START_HOUR + 1) * HOUR_HEIGHT - height));
 
                     return (
                       <div
                         key={item.id}
                         style={{
                           position: 'absolute',
-                          top: `${topVal}px`,
+                          top: `${liveTop}px`,
                           height: `${height}px`,
                           left: `${colIndex * 16}px`,
                           width: `calc(100% - ${colIndex * 16}px)`,
-                          zIndex: isSelected ? 30 : 10 + colIndex,
+                          zIndex: isMovingThis ? 50 : isSelected ? 30 : 10 + colIndex,
+                          touchAction: 'none',
                         }}
-                        onClick={() => onSelectItem(isSelected ? undefined : item.id)}
+                        onPointerDown={(e) => handleChipPointerDown(e, item)}
                         onMouseEnter={() => onHoverItem?.(item.id)}
                         onMouseLeave={() => onHoverItem?.(undefined)}
-                        draggable
-                        onDragStart={(e) => {
-                          setDraggingItemId(item.id);
-                          e.dataTransfer.setData('application/json', JSON.stringify({
-                            type: 'calendar-item',
-                            itemId: item.id
-                          }));
-                          e.dataTransfer.effectAllowed = 'move';
-                          e.currentTarget.classList.add('opacity-50');
-                        }}
-                        onDragEnd={(e) => {
-                          setDraggingItemId(null);
-                          e.currentTarget.classList.remove('opacity-50');
-                        }}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          e.dataTransfer.dropEffect = 'move';
-                        }}
                         className={`${
-                          isDraggingThis ? 'opacity-40 select-none cursor-grabbing' :
-                          isDraggingOther ? 'pointer-events-none opacity-30 select-none' : 'pointer-events-auto cursor-grab active:cursor-grabbing hover:scale-[1.005] hover:shadow'
-                        } p-1.5 rounded-r-xl border transition-all group flex flex-col justify-between ${styles.bg} ${styles.border} ${styles.borderLeft} ${
+                          isMovingThis ? 'pointer-events-auto select-none cursor-grabbing ring-2 ring-primary/50 shadow-lg' :
+                          isMovingOther ? 'pointer-events-none opacity-30 select-none' : 'pointer-events-auto cursor-grab hover:scale-[1.005] hover:shadow'
+                        } p-1.5 rounded-r-xl border ${isMovingThis ? '' : 'transition-all'} group flex flex-col justify-between ${styles.bg} ${styles.border} ${styles.borderLeft} ${
                           isSelected ? 'ring-1 ring-primary/25 shadow-md scale-[1.01]'
-                            : isHovered ? 'ring-1 ring-primary/40 shadow-md' : 'shadow-sm'
+                            : isHovered && !isMovingThis ? 'ring-1 ring-primary/40 shadow-md' : 'shadow-sm'
                         }`}
                       >
+                        {isMovingThis && chipDrag!.moved && (
+                          <span className="absolute -left-1 -top-5 text-[10px] font-bold text-primary bg-white border border-primary/30 rounded px-1.5 py-0.5 shadow-sm select-none">
+                            {fromMinutes(chipDrag!.startMin)}
+                          </span>
+                        )}
                         <div className="flex flex-col h-full justify-between">
                           <div className="flex justify-between items-start gap-1">
                             <div>

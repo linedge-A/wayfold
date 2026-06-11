@@ -44,6 +44,40 @@ if (process.env.GEMINI_API_KEY) {
   console.log('GEMINI_API_KEY not found in server environment. Running in mock intelligent mode.');
 }
 
+// ── Guarded page fetch for pasted links ───────────────────────────────────────────────────────
+// A bare URL carries no extractable text, so previously it fell through to the canned demo
+// fallback ("3 signature places"). Fetch the page itself (with SSRF guards) and run the SAME
+// deterministic ingestion core over its real content. Guards: http(s) only, public hosts only
+// (no localhost / private / link-local ranges), 6s timeout, HTML/plain only, capped size.
+const PRIVATE_HOST = /^(localhost$|0\.|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)|\.local$|^\[/i;
+async function fetchPageForExtraction(rawUrl: string): Promise<{ text: string; jsonld: any[] } | null> {
+  let u: URL;
+  try { u = new URL(rawUrl); } catch { return null; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  if (PRIVATE_HOST.test(u.hostname)) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const r = await fetch(u.href, { signal: ctrl.signal, redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WayfoldIngest/0.1)', Accept: 'text/html,text/plain' } });
+    const ct = String(r.headers.get('content-type') || '');
+    if (!r.ok || !/text\/(html|plain)/i.test(ct)) return null;
+    const html = (await r.text()).slice(0, 600_000);
+    const jsonld: any[] = [];
+    for (const m of html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+      try { const p = JSON.parse(m[1]); Array.isArray(p) ? jsonld.push(...p) : jsonld.push(p); } catch { /* skip bad blocks */ }
+    }
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<\/(p|div|li|h[1-6]|br|tr)[^>]*>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&amp;/g, '&').replace(/&#39;|&apos;|&#8217;/g, "'").replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n')
+      .slice(0, 30_000); // parser-input cap (security review LOW-2)
+    return { text, jsonld };
+  } catch { return null; } finally { clearTimeout(timer); }
+}
+
 // REST Copilot API Proxy
 app.post('/api/copilot', async (req, res) => {
   const { query, appState } = req.body;
@@ -60,6 +94,51 @@ app.post('/api/copilot', async (req, res) => {
       return res.json({ message: sug.message, suggestion: sug.suggestion, bookings: ing.bookings, candidates: ing.candidates });
     }
   } catch { /* fall through to the normal copilot flow */ }
+
+  // Pasted link → fetch the page (guarded) and run the shared deterministic core on its REAL
+  // content (JSON-LD first, then prose), instead of guessing from the bare URL string.
+  const pastedUrl = String(query || '').match(/https?:\/\/[^\s"'<>)]+/i)?.[0];
+  if (pastedUrl) {
+    const page = await fetchPageForExtraction(pastedUrl);
+    if (page) {
+      try {
+        const areaHint = appState?.tripBrief?.destination || '';
+        const host = new URL(pastedUrl).hostname.replace(/^www\./, '');
+        const pageReply = (places: any[], how: string) => res.json({
+          message: `I read **${host}** and pulled **${places.length}** place${places.length === 1 ? '' : 's'} from the page itself${how}. Import them into your Research Pocket below.`,
+          suggestion: {
+            type: 'Smart Add',
+            title: `${places.length} place${places.length === 1 ? '' : 's'} from ${host}`,
+            description: 'One-click import. Google details (location, hours, rating) fill in on add.',
+            actionLabel: `Add ${places.length} to Pocket`,
+            itemsToAdd: places,
+          },
+          bookings: [],
+          candidates: places,
+        });
+
+        // 1) Structured data first — schema.org JSON-LD is exact when the page carries it.
+        if (page.jsonld.length) {
+          const ing = dispatchIngestion({ surface: 'copilot-paste', content: 'jsonld', jsonld: page.jsonld, rawText: page.text, url: pastedUrl, areaHint });
+          if (ing.candidates.length || ing.bookings.length) {
+            const sug = toSuggestion(ing);
+            return res.json({ message: sug.message, suggestion: sug.suggestion, bookings: ing.bookings, candidates: ing.candidates });
+          }
+        }
+        // 2) AI extraction over the page text — curated, real place names (full-page prose is too
+        //    noisy for the phrase extractor: it picks up nav/affiliate junk).
+        const aiPlaces = await geminiExtractPlaces(page.text, 20_000, 15).catch(() => []);
+        if (aiPlaces.length) {
+          const enriched = aiPlaces.map((p: any) => ({ ...p, area: p.area || areaHint, website: pastedUrl }));
+          return pageReply(enriched, '');
+        }
+        // 3) Deterministic fallback (no AI key): keep only confident hits, ranked + capped.
+        const ing = dispatchIngestion({ surface: 'copilot-paste', content: 'text', sourceType: 'blog', rawText: page.text, url: pastedUrl, areaHint });
+        const byConf = [...ing.candidates].sort((a: any, b: any) => (b.signals?.confidence ?? 0) - (a.signals?.confidence ?? 0)).slice(0, 10);
+        if (byConf.length) return pageReply(byConf, ' — tagged with the writer\'s verdicts where stated');
+      } catch { /* fall through */ }
+    }
+  }
 
   // If live AI is ready, process through gemini-flash-latest
   if (ai) {
@@ -435,14 +514,15 @@ app.post('/api/copilot', async (req, res) => {
 
 // AI place-extraction fallback — reuses the SAME `ai` client as /api/copilot (no second client).
 // Only called when the deterministic core finds nothing.
-async function geminiExtractPlaces(text: string): Promise<any[]> {
+async function geminiExtractPlaces(text: string, maxChars = 2000, maxPlaces = 8): Promise<any[]> {
   if (!ai || !text) return [];
-  const systemInstruction = `Extract up to 8 real, named places (restaurants, sights, cafes, hotels) from the text.
+  const systemInstruction = `Extract up to ${maxPlaces} real, named places (restaurants, sights, cafes, hotels) the text RECOMMENDS VISITING.
+Ignore navigation, ads, affiliate products, and the site's own name.
 Return ONLY a JSON array: [{ "title": string, "category": "food"|"sight"|"stay", "area": string, "tags": string[] }]. No prose.`;
   try {
     const r = await ai.models.generateContent({
       model: process.env.GEMINI_FLASH_MODEL || 'gemini-flash-latest',
-      contents: String(text).slice(0, 2000),
+      contents: String(text).slice(0, maxChars),
       config: { systemInstruction, temperature: 0 },
     });
     const m = (r.text || '').match(/\[[\s\S]*\]/);
