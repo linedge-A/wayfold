@@ -296,6 +296,58 @@ export default function ItineraryPanel({
     window.removeEventListener('pointerup', handleChipPointerUp);
   }, [handleChipPointerMove, handleChipPointerUp]);
 
+  // ── Transit-leg drag (same pointer model as chips) ────────────────────────────────────────────
+  // A travel block used to be glued to the end of the previous event. Users want to DETACH it —
+  // slide it within the gap to say "leave at 10:30, not the instant the museum closes" — leaving
+  // visible free/buffer time before the trip. We store a per-segment departure override (minutes);
+  // the block's height stays the real travel duration. The slide is clamped to
+  // [prevEnd, nextStart − travelDur] so it can't overlap either neighbour. Annotation only — it
+  // repositions the transit block, it does not re-time the two events.
+  const [transitOverrides, setTransitOverrides] = useState<Record<string, { departMin?: number }>>({});
+  type TransitDrag = { segId: string; departMin: number; durationMin: number; grabOffsetMin: number; minMin: number; maxMin: number; pointerStartY: number; moved: boolean };
+  const transitDragRef = useRef<TransitDrag | null>(null);
+  const [transitDrag, setTransitDrag] = useState<TransitDrag | null>(null);
+
+  const handleTransitPointerMove = useCallback((e: PointerEvent) => {
+    const d = transitDragRef.current;
+    const rect = gridRef.current?.getBoundingClientRect();
+    if (!d || !rect) return;
+    const raw = START_MINUTES_C + (e.clientY - rect.top) / MINUTE_HEIGHT;
+    let depart = snapMin(raw - d.grabOffsetMin);
+    depart = Math.max(d.minMin, Math.min(d.maxMin, depart));
+    const next = { ...d, departMin: depart, moved: d.moved || Math.abs(e.clientY - d.pointerStartY) > 4 };
+    transitDragRef.current = next;
+    setTransitDrag(next);
+  }, []);
+
+  const handleTransitPointerUp = useCallback(() => {
+    window.removeEventListener('pointermove', handleTransitPointerMove);
+    const d = transitDragRef.current;
+    transitDragRef.current = null;
+    setTransitDrag(null);
+    if (!d || !d.moved) return;
+    setTransitOverrides(prev => ({ ...prev, [d.segId]: { departMin: d.departMin } }));
+  }, [handleTransitPointerMove]);
+
+  const handleTransitPointerDown = (e: React.PointerEvent, segId: string, departMin: number, durationMin: number, minMin: number, maxMin: number) => {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest('button, a, input')) return; // Navi link stays clickable
+    if (maxMin <= minMin) return; // no room to slide
+    const rect = gridRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    e.preventDefault();
+    const pointerMin = START_MINUTES_C + (e.clientY - rect.top) / MINUTE_HEIGHT;
+    const d: TransitDrag = { segId, departMin, durationMin, grabOffsetMin: pointerMin - departMin, minMin, maxMin, pointerStartY: e.clientY, moved: false };
+    transitDragRef.current = d;
+    setTransitDrag(d);
+    window.addEventListener('pointermove', handleTransitPointerMove);
+    window.addEventListener('pointerup', handleTransitPointerUp, { once: true });
+  };
+  useEffect(() => () => {
+    window.removeEventListener('pointermove', handleTransitPointerMove);
+    window.removeEventListener('pointerup', handleTransitPointerUp);
+  }, [handleTransitPointerMove, handleTransitPointerUp]);
+
   const [newTitle, setNewTitle] = useState('');
   const [newTime, setNewTime] = useState('09:00 AM');
   const [newCategory, setNewCategory] = useState<'sight' | 'food' | 'stay' | 'transit'>('sight');
@@ -437,6 +489,9 @@ export default function ItineraryPanel({
     durationMin: number;
     mode: string;
     gapMinutes: number;
+    departMin: number;   // current departure (override or glued-to-prev default)
+    minMin: number;      // earliest departure (prev event ends)
+    maxMin: number;      // latest departure (arrive before next starts)
   }[] = [];
 
   for (let i = 0; i < positionedTimedItems.length - 1; i++) {
@@ -448,13 +503,21 @@ export default function ItineraryPanel({
 
     const est = getDistanceAndDuration(current.item, next.item);
     if (est) {
-      const top = (currentEndMin - START_MINUTES) * MINUTE_HEIGHT;
+      const segId = `transit-${current.item.id}-${next.item.id}`;
       const gapMin = nextStartMin - currentEndMin;
-      // Show actual length in time as the segment height: durationMin in minutes * MINUTE_HEIGHT
+      // Height = the REAL travel time span (not the gap), so the block visually reads as duration.
       const height = est.durationMin * MINUTE_HEIGHT;
+      // Slide window: depart no earlier than the prev event ends, arrive no later than the next
+      // begins. Default departure is glued to the prev end; a drag stores an override.
+      const minMin = currentEndMin;
+      const maxMin = nextStartMin - est.durationMin;
+      const live = transitDrag?.segId === segId ? transitDrag.departMin : undefined;
+      const overridden = transitOverrides[segId]?.departMin;
+      const departMin = Math.max(minMin, Math.min(maxMin < minMin ? minMin : maxMin, live ?? overridden ?? currentEndMin));
+      const top = (departMin - START_MINUTES) * MINUTE_HEIGHT;
 
       transitSegments.push({
-        id: `transit-${current.item.id}-${next.item.id}`,
+        id: segId,
         item1: current.item,
         item2: next.item,
         top,
@@ -462,7 +525,10 @@ export default function ItineraryPanel({
         distance: est.distance,
         durationMin: est.durationMin,
         mode: est.mode,
-        gapMinutes: gapMin
+        gapMinutes: gapMin,
+        departMin,
+        minMin,
+        maxMin,
       });
     }
   }
@@ -882,23 +948,38 @@ export default function ItineraryPanel({
 
                 {transitSegments.map(segment => {
                   if (segment.height <= 2) return null;
-                  const isDraggingOther = draggingItemId !== null;
+                  const isMovingChip = chipDrag !== null;
+                  const isDraggingThis = transitDrag?.segId === segment.id;
+                  const isDraggingOtherTransit = transitDrag !== null && !isDraggingThis;
+                  const canSlide = segment.maxMin > segment.minMin;
+                  // Dim transit while a CHIP or a DIFFERENT transit is being dragged.
+                  const dim = isMovingChip || isDraggingOtherTransit;
 
                   return (
                     <div
                       key={segment.id}
+                      onPointerDown={(e) => canSlide && handleTransitPointerDown(e, segment.id, segment.departMin, segment.durationMin, segment.minMin, segment.maxMin)}
                       style={{
                         position: 'absolute',
                         top: `${segment.top}px`,
                         height: `${segment.height}px`,
                         left: '0px',
                         right: '0px',
-                        zIndex: 5,
+                        zIndex: isDraggingThis ? 40 : 5,
+                        touchAction: canSlide ? 'none' : undefined,
                       }}
                       className={`${
-                        isDraggingOther ? 'pointer-events-none opacity-20' : 'pointer-events-auto'
-                      } border-y border-r border-slate-200/50 border-l-4 border-l-slate-400 bg-slate-400/[0.03] hover:bg-slate-400/[0.05] rounded-r-xl transition-all duration-150 flex items-center justify-center group select-none overflow-visible shadow-sm`}
+                        dim ? 'pointer-events-none opacity-20' : 'pointer-events-auto'
+                      } ${canSlide ? (isDraggingThis ? 'cursor-grabbing' : 'cursor-grab') : ''} ${
+                        isDraggingThis ? 'ring-2 ring-slate-400/60 shadow-lg bg-slate-400/[0.07]' : 'bg-slate-400/[0.03] hover:bg-slate-400/[0.05]'
+                      } border-y border-r border-slate-200/50 border-l-4 border-l-slate-400 rounded-r-xl ${isDraggingThis ? '' : 'transition-all duration-150'} flex items-center justify-center group select-none overflow-visible shadow-sm`}
                     >
+                      {/* Live departure badge while sliding */}
+                      {isDraggingThis && transitDrag!.moved && (
+                        <span className="absolute -left-1 -top-5 text-[10px] font-bold text-slate-600 bg-white border border-slate-300 rounded px-1.5 py-0.5 shadow-sm select-none z-10">
+                          leave {fromMinutes(segment.departMin)}
+                        </span>
+                      )}
                       {/* Middle textual note */}
                       <div className="flex items-center gap-1.5 px-3 py-1 bg-white/95 backdrop-blur-sm border border-slate-200 rounded-full shadow-sm text-[10px] text-slate-500 select-none max-w-[95%] pointer-events-auto transition-transform duration-100 group-hover:scale-105">
                         <Car className="w-3.5 h-3.5 text-slate-400 shrink-0" />
