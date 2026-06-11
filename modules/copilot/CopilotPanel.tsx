@@ -57,6 +57,36 @@ const classifyDeltas = (ds?: RevisionDelta[]): ActionTier => {
   return 'confirm'; // add-only
 };
 
+// Minimal, XSS-safe rich-text rendering for chat messages: **bold** + numbered/bulleted list lines
+// + paragraph breaks. Builds React nodes directly (no innerHTML), so model/server output stays inert.
+const boldSegments = (line: string, key: number): React.ReactNode => {
+  const parts = line.split(/\*\*([^*]+)\*\*/g);
+  return (
+    <React.Fragment key={key}>
+      {parts.map((p, i) => (i % 2 === 1 ? <strong key={i} className="font-bold text-on-surface">{p}</strong> : p))}
+    </React.Fragment>
+  );
+};
+const renderRichText = (text?: string): React.ReactNode => {
+  if (!text) return null;
+  // Numbered items often arrive inline ("…: 1. **A** … 2. **B** …") — break them onto their own lines.
+  const normalized = text.replace(/\s(?=\d{1,2}\.\s\*\*)/g, '\n');
+  return normalized.split('\n').map((rawLine, idx) => {
+    const line = rawLine.trimEnd();
+    if (!line.trim()) return <div key={idx} className="h-1.5" />;
+    const m = line.match(/^\s*(\d{1,2}[.)]|[-•])\s+(.*)$/);
+    if (m) {
+      return (
+        <div key={idx} className="flex gap-1.5 pl-1 mt-1">
+          <span className="shrink-0 font-bold text-primary">{m[1].replace(')', '.')}</span>
+          <span className="min-w-0">{boldSegments(m[2], idx)}</span>
+        </div>
+      );
+    }
+    return <div key={idx} className={idx > 0 ? 'mt-1' : ''}>{boldSegments(line, idx)}</div>;
+  });
+};
+
 export default function CopilotPanel({
   messages,
   deltas,
@@ -387,7 +417,7 @@ export default function CopilotPanel({
                       : 'bg-primary text-white rounded-tr-none'
                   }`}
                 >
-                  {msg.text}
+                  {renderRichText(msg.text)}
 
                   {/* Suggestion — neutral text; colour lives only on the action button */}
                   {isAI && msg.suggestion && (() => {
