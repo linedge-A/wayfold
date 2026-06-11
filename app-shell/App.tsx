@@ -4,8 +4,8 @@
  */
 
 // ... (keep initial comments)
-import React, { useState, useEffect, useMemo } from 'react';
-import { Sparkles, Map, Bot, Compass, Plus, ShieldAlert, Calendar } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Sparkles, Map, Bot, Compass, Plus, ShieldAlert, Calendar, ChevronUp, ListChecks } from 'lucide-react';
 import { APIProvider, useMapsLibrary } from '@vis.gl/react-google-maps';
 // ...
 import TopHeader from './TopHeader';
@@ -173,6 +173,12 @@ function AppContent() {
   const [leftWidth, setLeftWidth] = useState<number>(340);
   const [rightWidth, setRightWidth] = useState<number>(360);
   const [middleHeight, setMiddleHeight] = useState<number>(300);
+  // The pocket shelf may shrink only to a usable floor at the page edge; dragging past
+  // that collapses it entirely, leaving a slim toggle as the way back.
+  const [pocketCollapsed, setPocketCollapsed] = useState<boolean>(false);
+  const centerColRef = useRef<HTMLDivElement>(null);
+  const POCKET_MIN_H = 140; // below this the shelf isn't usable — hide instead
+  const RESIZER_H = 12;
 
   // Resize handler for Left Sidebar (Itinerary)
   const handleLeftDrag = (e: React.MouseEvent) => {
@@ -230,10 +236,18 @@ function AppContent() {
     const startHeight = middleHeight;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaY = moveEvent.clientY - startY;
-      // Allow middle map height to go from 120px up to 700px
-      const newHeight = Math.max(120, Math.min(700, startHeight + deltaY));
-      setMiddleHeight(newHeight);
+      const desired = startHeight + (moveEvent.clientY - startY);
+      // Clamp to the LIVE column height: the map may grow only until the pocket hits its
+      // usable floor at the page edge — it must never push the shelf below the viewport.
+      const colH = centerColRef.current?.getBoundingClientRect().height ?? 700;
+      const maxMap = colH - RESIZER_H - POCKET_MIN_H;
+      if (desired > maxMap + 48) {
+        // dragged well past the floor → hide the shelf, keep the toggle as the hint back
+        setPocketCollapsed(true);
+        return;
+      }
+      setPocketCollapsed(false);
+      setMiddleHeight(Math.max(120, Math.min(maxMap, desired)));
     };
 
     const handleMouseUp = () => {
@@ -1216,7 +1230,8 @@ function AppContent() {
 
           {/* Center Canvas Pane (Toggles Focus Mode / Map or Normal Grid) */}
           {viewType === 'day' && (
-            <div 
+            <div
+              ref={centerColRef}
               className={`flex-1 flex flex-col overflow-hidden h-full ${
                 isLargeScreen ? 'flex' : activeMobileTab === 'map' ? 'flex' : 'hidden'
               }`}
@@ -1229,9 +1244,9 @@ function AppContent() {
               ) : (
                 <>
                   {/* Upper Map Panel with focus/minimize button details */}
-                  <div 
-                    style={{ height: `${middleHeight}px` }} 
-                    className="shrink-0 relative group overflow-hidden flex flex-col"
+                  <div
+                    style={pocketCollapsed ? undefined : { height: `${middleHeight}px` }}
+                    className={`relative group overflow-hidden flex flex-col ${pocketCollapsed ? 'flex-1' : 'shrink-0'}`}
                   >
                     <MapPanel
                       items={activeDayItems}
@@ -1246,27 +1261,39 @@ function AppContent() {
                   {/* Horizontal Resizer Drag Handle */}
                   <div
                     onMouseDown={handleMiddleDrag}
-                    onDoubleClick={() => setMiddleHeight(350)}
+                    onDoubleClick={() => { setMiddleHeight(350); setPocketCollapsed(false); }}
                     className="h-3 hover:h-4 flex items-center justify-center cursor-row-resize group w-full select-none shrink-0 transition-all"
                     title="Drag to resize map (Double click to reset)"
                   >
                     <div className="h-1 w-12 rounded-full bg-slate-200 group-hover:bg-primary/50 group-active:bg-primary transition-all pointer-events-none" />
                   </div>
 
-                  {/* Lower Research Pocket Shelf */}
-                  <PocketPanel
-                    pocket={appState.pocket}
-                    onAddPocketItem={handleAddPocketItem}
-                    onPromoteItem={handlePromotePocketItem}
-                    onClearAll={handleClearAllPocket}
-                    onRemovePocketItem={handleRemovePocketItem}
-                    selectedItemId={appState.selectedItemId}
-                    onSelectItem={handleSelectItem}
-                    onDropCalendarItem={handleDropCalendarItemToPocket}
-                    focusedDayItems={activeDayItems}
-                    focusedDayArea={currentDay?.areaSummary}
-                    focusedDayLabel={currentDay ? `${currentDay.label} ${currentDay.date}` : undefined}
-                  />
+                  {/* Lower Research Pocket Shelf — collapses to a slim toggle when squeezed past its floor */}
+                  {pocketCollapsed ? (
+                    <button
+                      onClick={() => setPocketCollapsed(false)}
+                      className="shrink-0 flex items-center justify-center gap-2 py-1.5 bg-white border border-border-subtle rounded-2xl text-xs font-bold text-secondary hover:text-primary hover:border-primary/40 transition-colors cursor-pointer"
+                      title="Show the Bucket List"
+                    >
+                      <ListChecks className="w-3.5 h-3.5 text-primary" />
+                      Bucket List · {pocketMapItems.length}
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                  ) : (
+                    <PocketPanel
+                      pocket={appState.pocket}
+                      onAddPocketItem={handleAddPocketItem}
+                      onPromoteItem={handlePromotePocketItem}
+                      onClearAll={handleClearAllPocket}
+                      onRemovePocketItem={handleRemovePocketItem}
+                      selectedItemId={appState.selectedItemId}
+                      onSelectItem={handleSelectItem}
+                      onDropCalendarItem={handleDropCalendarItemToPocket}
+                      focusedDayItems={activeDayItems}
+                      focusedDayArea={currentDay?.areaSummary}
+                      focusedDayLabel={currentDay ? `${currentDay.label} ${currentDay.date}` : undefined}
+                    />
+                  )}
                 </>
               )}
             </div>

@@ -29,26 +29,6 @@ const PushPinIcon = ({ className, pinned }: { className?: string; pinned: boolea
   );
 };
 
-const PRESET_TRIPS = [
-  {
-    id: 'kyoto-2024',
-    title: 'Kyoto Spring 2024',
-    dates: 'April 12 - 20, 2024',
-    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCxljkG3UX5_XBhiUzV6IVWsJJUoANfwarMqsx4ikueZZtoCBc4cij8gXW13LMZIEFA82GMTr4RYLzdLE_6KyIyUoflaUWRDBi0Zg-0Zd_e3B3BtLAuKpRBqFcbOMzq5aEmK2jp7EjPRK7sBGPz-svaBeRIKcwAN_jm80jgRAChfB1YpxyxIAPFNUYTC-TWo5Q5zhw8KiNIMqQO4jwzQ5EWG8dLvKNWq6Qcteekz6To-othLPRiRASwba453_P5pMzN6NTjM9XwHa4',
-  },
-  {
-    id: 'tokyo-2024',
-    title: 'Tokyo Autumn 2024',
-    dates: 'Oct 22 - 29, 2024',
-    image: 'https://images.unsplash.com/photo-1540959733332-eab4deceeaf7?q=80&w=200&auto=format&fit=crop',
-  },
-  {
-    id: 'osaka-2025',
-    title: 'Osaka Winter 2025',
-    dates: 'Jan 15 - 22, 2025',
-    image: 'https://images.unsplash.com/photo-1590253187391-e1a6c9d839e2?q=80&w=200&auto=format&fit=crop',
-  },
-];
 
 const START_HOUR = 7; // 7 AM
 const END_HOUR = 22;  // 10 PM
@@ -243,6 +223,20 @@ export default function ItineraryPanel({
 }: ItineraryPanelProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
+
+  // Failsafe: always clear the dragging flag when ANY drag ends anywhere in the document.
+  // The per-chip onDragEnd is not enough — dragging a chip into the pocket REMOVES the chip
+  // from the board, so its dragend never fires and draggingItemId would stick, leaving every
+  // chip pointer-events-none (the calendar then "can't drag" or click until a reload).
+  useEffect(() => {
+    const reset = () => setDraggingItemId(null);
+    document.addEventListener('dragend', reset);
+    document.addEventListener('drop', reset);
+    return () => {
+      document.removeEventListener('dragend', reset);
+      document.removeEventListener('drop', reset);
+    };
+  }, []);
   const [newTitle, setNewTitle] = useState('');
   const [newTime, setNewTime] = useState('09:00 AM');
   const [newCategory, setNewCategory] = useState<'sight' | 'food' | 'stay' | 'transit'>('sight');
@@ -314,8 +308,6 @@ export default function ItineraryPanel({
     }
   };
 
-  const [activeTripId, setActiveTripId] = useState('kyoto-2024');
-  const [isTripDropdownOpen, setIsTripDropdownOpen] = useState(false);
   const [isViewDropdownOpen, setIsViewDropdownOpen] = useState(false);
 
   useEffect(() => {
@@ -327,8 +319,6 @@ export default function ItineraryPanel({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showAddForm]);
-
-  const activeTrip = PRESET_TRIPS.find(t => t.id === activeTripId) || PRESET_TRIPS[0];
 
   const currentDayItems = items
     .filter(item => item.dayId === currentDay.id);
@@ -465,81 +455,50 @@ export default function ItineraryPanel({
     <aside
       className="w-full bg-white border border-border-subtle rounded-2xl flex flex-col shadow-sm shrink-0 overflow-hidden h-full"
     >
-      {/* Sidebar Header Block */}
-      <div className="p-3 border-b border-border-subtle bg-white select-none">
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg overflow-hidden bg-accent-soft flex items-center justify-center shrink-0 border border-border-subtle shadow-sm">
-              <img
-                alt={activeTrip.title}
-                className="w-full h-full object-cover"
-                src={activeTrip.image}
-              />
-            </div>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setIsTripDropdownOpen(!isTripDropdownOpen)}
-                className="flex items-center gap-1.5 hover:bg-surface-container-low p-1.5 -m-1.5 rounded-lg transition-colors text-left cursor-pointer group"
-              >
-                <div>
-                  <div className="flex items-center gap-1">
-                    <h2 className="text-[15px] font-bold text-on-surface leading-tight group-hover:text-primary transition-colors">
-                      {activeTrip.title}
-                    </h2>
-                    <ChevronDown className="w-4 h-4 text-tertiary group-hover:text-primary transition-colors shrink-0" />
-                  </div>
-                  <p className="text-[11px] text-on-surface-variant font-medium mt-0.5">
-                    {activeTrip.dates}
-                  </p>
-                </div>
-              </button>
+      {/* Toolbar — single slim row. The trip identity (title/dates/switcher) lives ONLY in the
+          header band now; this row keeps the per-view controls: day navigation centered (day
+          view), and the view switcher + share + add right-aligned across all views. */}
+      <div className="h-[38px] border-b border-border-subtle flex items-center justify-between px-3 bg-white shrink-0 select-none relative">
+        <div className="w-8 shrink-0" />
 
-              {isTripDropdownOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40 bg-transparent"
-                    onClick={() => setIsTripDropdownOpen(false)}
-                  />
-                  <div className="absolute left-0 mt-2 w-56 bg-white border border-border-subtle rounded-xl shadow-lg py-1.5 z-50 animate-fadeIn text-xs">
-                    {PRESET_TRIPS.map(trip => (
-                      <button
-                        key={trip.id}
-                        type="button"
-                        onClick={() => {
-                          setActiveTripId(trip.id);
-                          setIsTripDropdownOpen(false);
-                        }}
-                        className={`w-full text-left px-3.5 py-2.5 hover:bg-surface-container-low transition-colors flex items-center gap-3 cursor-pointer ${
-                          activeTripId === trip.id ? 'bg-accent-soft/40 font-bold text-primary animate-pulse' : 'text-on-surface'
-                        }`}
-                      >
-                        <div className="w-8 h-8 rounded overflow-hidden shrink-0 bg-surface-container">
-                          <img src={trip.image} className="w-full h-full object-cover" alt="" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-bold truncate">{trip.title}</p>
-                          <p className="text-[10px] text-secondary truncate mt-0.5">{trip.dates}</p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
+        {viewType === 'day' && (
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePrevDay}
+              disabled={isFirstDay}
+              className="p-1 rounded hover:bg-surface-container cursor-pointer text-secondary transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+              title="Previous Day"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-xs font-black text-on-surface select-none whitespace-nowrap min-w-[90px] text-center tracking-tight">
+              {getShortDateString(currentDay.fullDateString)}
+            </span>
+            <button
+              type="button"
+              onClick={handleNextDay}
+              disabled={isLastDay}
+              className="p-1 rounded hover:bg-surface-container cursor-pointer text-secondary transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+              title="Next Day"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
+        )}
 
-          {/* Consolidated View Switch Dropdown */}
+        <div className="flex items-center gap-1">
+          {/* View switcher — right-aligned */}
           <div className="relative shrink-0">
             <button
               type="button"
               onClick={() => setIsViewDropdownOpen(!isViewDropdownOpen)}
-              className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-surface-container-low border border-border-subtle rounded-lg text-xs font-bold text-on-surface transition-all cursor-pointer shadow-sm bg-white"
+              className="flex items-center gap-1 px-2 py-1 hover:bg-surface-container-low border border-border-subtle rounded-lg text-[11px] font-bold text-on-surface transition-all cursor-pointer bg-white"
             >
               <span>
                 {viewType === 'day' ? 'Day View' : viewType === 'week' ? 'Week View' : 'Month View'}
               </span>
-              <ChevronDown className="w-4 h-4 text-secondary shrink-0" />
+              <ChevronDown className="w-3.5 h-3.5 text-secondary shrink-0" />
             </button>
 
             {isViewDropdownOpen && (
@@ -568,61 +527,30 @@ export default function ItineraryPanel({
               </>
             )}
           </div>
+
+          {/* Share — next to the view switcher */}
+          <button
+            onClick={() => onShare?.()}
+            className="p-1.5 rounded-md hover:bg-slate-100 transition-colors cursor-pointer text-slate-400 hover:text-primary"
+            title="Share current plan"
+          >
+            <Share2 className="w-4 h-4" />
+          </button>
+          {viewType === 'day' && (
+            <button
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="p-1.5 rounded-md hover:bg-slate-100 transition-colors cursor-pointer flex items-center justify-center"
+              title="Add New Stop"
+            >
+              <Plus className={`w-4 h-4 transition-transform duration-200 ${showAddForm ? 'rotate-45 text-red-500' : 'text-primary'}`} />
+            </button>
+          )}
         </div>
       </div>
 
       {/* Render matching workspace views based on selected setting */}
       {viewType === 'day' && (
         <div className="flex-1 flex flex-col overflow-hidden bg-slate-50/20">
-          {/* Day Navigation Row in Day View */}
-          <div className="h-[38px] border-b border-border-subtle flex items-center justify-between px-3 bg-white shrink-0 select-none relative">
-            {/* Left anchor spacing spacer */}
-            <div className="w-8 shrink-0" />
-
-            {/* Day controls centered in the middle */}
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handlePrevDay}
-                disabled={isFirstDay}
-                className="p-1 rounded hover:bg-surface-container cursor-pointer text-secondary transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
-                title="Previous Day"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span className="text-xs font-black text-on-surface select-none whitespace-nowrap min-w-[90px] text-center tracking-tight">
-                {getShortDateString(currentDay.fullDateString)}
-              </span>
-              <button
-                type="button"
-                onClick={handleNextDay}
-                disabled={isLastDay}
-                className="p-1 rounded hover:bg-surface-container cursor-pointer text-secondary transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
-                title="Next Day"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Plus add stop toggle button replacing original capsule */}
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => onShare?.()}
-                className="p-1.5 rounded-md hover:bg-slate-100 transition-colors cursor-pointer text-slate-400 hover:text-primary"
-                title="Share current plan"
-              >
-                <Share2 className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setShowAddForm(!showAddForm)}
-                className={`p-1.5 rounded-md hover:bg-slate-100 transition-colors cursor-pointer flex items-center justify-center`}
-                title="Add New Stop"
-              >
-                <Plus className={`w-4 h-4 transition-transform duration-200 ${showAddForm ? 'rotate-45 text-red-500' : 'text-primary'}`} />
-              </button>
-            </div>
-          </div>
-
           <div className="flex-grow overflow-y-auto custom-scrollbar p-3 space-y-3">
             {/* Flexible / All Day Stops Category */}
             {flexibleItems.length > 0 && (
