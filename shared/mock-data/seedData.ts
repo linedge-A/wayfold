@@ -7,60 +7,8 @@ import { AppState, ItineraryItem, PocketColumn, BookingRecord, TripArchiveItem }
 import { ICELAND_FAMILY_ARCHIVE_ITEM } from '@/shared/mock-data/icelandFamilyTrip';
 
 export const INITIAL_TRIP_ARCHIVE: TripArchiveItem[] = [
+  // Only the loadable Iceland trip — placeholder archive cards removed (working examples only).
   ICELAND_FAMILY_ARCHIVE_ITEM,
-  {
-    id: 'trip-archive-1',
-    title: 'Neon Nights: Tokyo Tech Tour',
-    destination: 'Tokyo, Japan',
-    startDate: 'Nov 10, 2026',
-    endDate: 'Nov 14, 2026',
-    stopCount: 8,
-    status: 'upcoming',
-    imageUrl: 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?q=80&w=600&auto=format&fit=crop',
-    participants: ['usr-1', 'usr-2', 'usr-3']
-  },
-  {
-    id: 'trip-archive-2',
-    title: 'Amalfi Heritage & Gastronomy',
-    destination: 'Amalfi Coast, Italy',
-    startDate: 'Sept 12, 2024',
-    endDate: 'Sept 20, 2024',
-    stopCount: 14,
-    status: 'completed',
-    imageUrl: 'https://images.unsplash.com/photo-1523906834658-6e24ef2382f9?q=80&w=600&auto=format&fit=crop',
-    archiveEntryNumber: 284
-  },
-  {
-    id: 'trip-archive-3',
-    title: 'Parisian Autumn Residency',
-    destination: 'Paris, France',
-    startDate: 'Oct 02, 2023',
-    endDate: 'Oct 09, 2023',
-    stopCount: 6,
-    status: 'completed',
-    imageUrl: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?q=80&w=600&auto=format&fit=crop',
-    archiveEntryNumber: 241
-  },
-  {
-    id: 'trip-archive-4',
-    title: 'Kyoto Exploration',
-    destination: 'Kyoto, Japan',
-    startDate: 'Nov 03, 2022',
-    endDate: 'Nov 10, 2022',
-    stopCount: 12,
-    status: 'archived',
-    imageUrl: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?q=80&w=600&auto=format&fit=crop'
-  },
-  {
-    id: 'trip-archive-5',
-    title: 'Santorini Escape',
-    destination: 'Santorini, Greece',
-    startDate: 'Dates not set',
-    endDate: '',
-    stopCount: 0,
-    status: 'draft',
-    imageUrl: 'https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?q=80&w=600&auto=format&fit=crop'
-  }
 ];
 
 export const INITIAL_TRIP_BRIEF = {
