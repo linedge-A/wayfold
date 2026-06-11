@@ -513,7 +513,7 @@ export default function PocketPanel({
                       onClick={() => handleAddFoundPlace(place)}
                     >
                       <div className="w-10 h-10 rounded-md overflow-hidden bg-slate-100 shrink-0">
-                        <img src={place.imageUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        <img src={place.imageUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold text-on-surface truncate leading-tight">{place.title}</p>
@@ -681,11 +681,12 @@ export default function PocketPanel({
                         <div className="flex items-center justify-between w-full gap-1">
                           <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             <div className="w-11 h-11 rounded-lg overflow-hidden shrink-0 border border-slate-100 shadow-sm bg-slate-50">
-                              <img 
-                                src={item.imageUrl || `https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?q=80&w=150&auto=format&fit=crop`} 
+                              <img
+                                src={item.imageUrl || `https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?q=80&w=150&auto=format&fit=crop`}
                                 alt={item.title}
                                 className="w-full h-full object-cover"
                                 referrerPolicy="no-referrer"
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
                               />
                             </div>
                             <div className="min-w-0 flex-1">
