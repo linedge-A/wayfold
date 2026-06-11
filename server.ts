@@ -5,6 +5,7 @@
 
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import { extractCandidates } from './modules/ingestion/extractCandidates';
@@ -22,7 +23,11 @@ app.use('/api', rateLimit({ windowMs: 60_000, max: 90 }));   // general per-IP c
 // AI proxy + state-changing ingest endpoints: tighter per-IP cap + optional shared-token gate
 app.use(['/api/copilot', '/api/ingest'], rateLimit({ windowMs: 60_000, max: 20 }), requireApiToken);
 
-const PORT = 3000;
+// Liveness probe for the proxy deploy (Cloud Run / Fly health checks). Outside `/api`, so it is
+// never rate-limited or token-gated, and is defined before the SPA catch-all so it always wins.
+app.get('/healthz', (_req, res) => { res.json({ ok: true, service: 'wayfold-proxy' }); });
+
+const PORT = Number(process.env.PORT) || 3000;
 
 // Initialize Google Gen AI client with server key if present
 let ai: GoogleGenAI | null = null;
@@ -612,12 +617,19 @@ async function startServer() {
     app.use(vite.middlewares);
     console.log('Vite development middleware connected.');
   } else {
+    // Combined mode serves the built SPA; proxy-only deploys ship without a `dist/`. Guard on its
+    // presence so the SAME image works either way — when absent, skip static + catch-all and the
+    // service is a pure API proxy (non-API routes 404 cleanly instead of erroring on a missing file).
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-    console.log('Production static asset pipelines primed.');
+    if (fs.existsSync(path.join(distPath, 'index.html'))) {
+      app.use(express.static(distPath));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+      console.log('Production static asset pipelines primed (combined SPA + API).');
+    } else {
+      console.log('No dist/ found — running as a standalone API proxy.');
+    }
   }
 
   app.listen(PORT, '0.0.0.0', () => {

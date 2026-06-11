@@ -63,8 +63,12 @@ export function rateLimit({ windowMs, max }: { windowMs: number; max: number }) 
     res.setHeader('X-RateLimit-Limit', String(max));
     res.setHeader('X-RateLimit-Remaining', String(Math.max(0, max - e.count)));
     if (e.count > max) {
-      res.setHeader('Retry-After', String(Math.ceil((e.resetAt - now) / 1000)));
-      res.status(429).json({ error: 'Too many requests — please slow down.' });
+      const retryAfterSec = Math.ceil((e.resetAt - now) / 1000);
+      res.setHeader('Retry-After', String(retryAfterSec));
+      // Machine-readable cap contract the client reads to show the "busy — try again
+      // shortly" state (distinct from the front-end per-session pacing cap). `scope:'ip'`
+      // marks this as the real per-IP cost wall. `message` keeps a human-readable string.
+      res.status(429).json({ error: 'rate_limited', scope: 'ip', retryAfterSec, message: 'Too many requests — please slow down.' });
       return;
     }
     if (hits.size > 5000) for (const [k, v] of hits) if (now > v.resetAt) hits.delete(k); // opportunistic GC

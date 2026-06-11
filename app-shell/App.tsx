@@ -29,9 +29,15 @@ import { INITIAL_TRIP_BRIEF, INITIAL_DAYS, INITIAL_ITINERARY_ITEMS, INITIAL_POCK
 import { loadJSON, saveJSON, pocketKey } from '@/shared/utils/persistence';
 import { getTrip } from '@/shared/mock-data/trips';
 import { getLocalCopilotResponse } from '@/modules/copilot/localResponses';
+import { sessionMeter } from '@/shared/usage/sessionMeter';
 
 import ErrorBoundary from './ErrorBoundary';
 import { API_KEY, IS_VALID_KEY } from './mapsKey';
+
+// Backend proxy base URL. Empty (default) → same-origin → unchanged combined-deploy / local-dev
+// behavior. Set VITE_API_BASE to the proxy's absolute URL to serve the SPA from a CDN while the
+// keyed Gemini proxy lives elsewhere. See output/backend-proxy-brief.md.
+const API_BASE: string = ((import.meta as any).env?.VITE_API_BASE ?? '').replace(/\/$/, '');
 
 export default function App() {
   return (
@@ -787,11 +793,23 @@ function AppContent() {
       return;
     }
 
+    // Free-tier per-session pacing: block BEFORE any network call once the session cap is reached
+    // (refresh resets it). UX pacing only — the per-IP proxy cap is the real cost wall. (#brief Task B)
+    if (!sessionMeter.canUse()) {
+      setMessages(prev => [...prev, {
+        id: 'ai-cap-' + Date.now(),
+        sender: 'ai',
+        text: `You've used your ${sessionMeter.cap} free Copilot actions for this session. Refresh the page to continue, or upgrade for unlimited assistance. Your itinerary, drag, pocket and revisions all keep working in the meantime.`,
+        timestamp: 'Just now',
+      }]);
+      return;
+    }
+
     setIsCopilotLoading(true);
 
     try {
       // Call server proxy first
-      const res = await fetch('/api/copilot', {
+      const res = await fetch(`${API_BASE}/api/copilot`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -801,6 +819,7 @@ function AppContent() {
       });
 
       if (res.ok) {
+        sessionMeter.record(); // count only a real server hit (not 429s, not client short-circuits)
         const payload = await res.json();
         const freshAIMsg: CopilotMessage = {
           id: 'ai-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9),
@@ -832,6 +851,18 @@ function AppContent() {
             [freshAIMsg.id]: { base: appState.itineraryItems, updatedItems: payload.updatedItems, updatedPocket: payload.updatedPocket, deltas: payload.deltas },
           }));
         }
+      } else if (res.status === 429) {
+        // The proxy's per-IP cost wall tripped — distinct from the per-session pacing cap above.
+        const body = await res.json().catch(() => ({} as any));
+        const sec = Number(body?.retryAfterSec);
+        const waitMsg = Number.isFinite(sec) && sec > 0 ? ` Try again in about ${sec}s.` : ' Try again shortly.';
+        setMessages(prev => [...prev, {
+          id: 'ai-busy-' + Date.now(),
+          sender: 'ai',
+          text: `Copilot is handling a lot of requests right now.${waitMsg} Your itinerary and the rest of the workspace keep working.`,
+          timestamp: 'Just now',
+        }]);
+        return;
       } else {
         throw new Error('API server failed');
       }
