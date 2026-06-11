@@ -115,7 +115,7 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
           </button>
         </div>
 
-        <div className="w-7 h-7 rounded-full bg-indigo-600 text-white font-bold text-[10px] flex items-center justify-center border border-indigo-500 shadow-sm cursor-pointer hover:bg-indigo-700 transition-colors select-none" title="linedge.research@gmail.com">
+        <div className="w-7 h-7 rounded-full bg-primary text-white font-bold text-xs flex items-center justify-center border border-primary/60 shadow-sm cursor-pointer hover:bg-accent-primary-hover transition-colors select-none" title="linedge.research@gmail.com">
           LR
         </div>
       </div>
