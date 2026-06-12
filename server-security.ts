@@ -88,7 +88,13 @@ export function rateLimit({ windowMs, max }: { windowMs: number; max: number }) 
  *  per-user auth before any multi-tenant deployment. */
 export function requireApiToken(req: Request, res: Response, next: NextFunction): void {
   const token = process.env.API_AUTH_TOKEN;
-  if (!token) { next(); return; } // demo mode — no token configured
+  if (!token) {
+    if (process.env.NODE_ENV === 'production') {
+      res.status(503).json({ error: 'Server not configured.', hint: 'Set API_AUTH_TOKEN.' });
+      return;
+    }
+    next(); return;
+  }
   const got = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '') || String(req.headers['x-api-token'] || '');
   if (got && got === token) { next(); return; }
   res.status(401).json({ error: 'Unauthorized.' });
