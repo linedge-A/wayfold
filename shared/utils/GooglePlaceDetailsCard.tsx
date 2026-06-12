@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { useMapsLibrary } from '@vis.gl/react-google-maps';
 import { Star, Globe, Phone, MapPin, Clock, FileText, Loader2, Link } from 'lucide-react';
+import { fetchPlaceSnapshot } from '@/shared/utils/placesCache';
 
 interface GooglePlaceDetailsCardProps {
   title: string;
@@ -63,40 +64,27 @@ export default function GooglePlaceDetailsCard({
 
     if (!placesLib || !title) return;
 
+    let cancelled = false;
     setLoading(true);
     setError(false);
 
-    // Search for the place via Text Query to get the Place details
-    placesLib.Place.searchByText({
-      textQuery: `${title}, Kyoto, Japan`,
-      fields: [
-        'displayName',
-        'formattedAddress',
-        'rating',
-        'userRatingCount',
-        'regularOpeningHours',
-        'websiteURI',
-        'nationalPhoneNumber',
-        'photos',
-        'editorialSummary'
-      ],
-      maxResultCount: 1,
-    })
-      .then(({ places }) => {
-        if (places && places[0]) {
-          const p = places[0] as any;
+    // Shared cache (memory + localStorage) — one Places Text Search per place, ever.
+    fetchPlaceSnapshot(placesLib, `${title}, Kyoto, Japan`)
+      .then((snap) => {
+        if (cancelled) return;
+        if (snap) {
           setPlace({
-            displayName: p.displayName,
-            formattedAddress: p.formattedAddress,
-            rating: p.rating,
-            userRatingCount: p.userRatingCount,
-            isOpen: p.regularOpeningHours && typeof p.regularOpeningHours.isOpen === 'function' ? p.regularOpeningHours.isOpen() : null,
-            openingHours: p.regularOpeningHours?.weekdayDescriptions || null,
-            todayHours: p.regularOpeningHours?.weekdayDescriptions?.[0] || null,
-            websiteUri: p.websiteURI || p.websiteUri || null,
-            nationalPhoneNumber: p.nationalPhoneNumber,
-            summary: p.editorialSummary,
-            photoUrl: p.photos && p.photos[0] ? p.photos[0].getURI({ maxWidth: 320 }) : null,
+            displayName: snap.displayName,
+            formattedAddress: snap.formattedAddress || null,
+            rating: snap.rating ?? null,
+            userRatingCount: snap.userRatingCount ?? null,
+            isOpen: null, // open/closed is time-sensitive; not served from cache
+            openingHours: snap.weekdayDescriptions || null,
+            todayHours: snap.todayHours || null,
+            websiteUri: snap.websiteUri || null,
+            nationalPhoneNumber: snap.nationalPhoneNumber || null,
+            summary: snap.editorialSummary || null,
+            photoUrl: snap.photoUrl || null,
           });
         } else {
           setError(true);
@@ -104,10 +92,13 @@ export default function GooglePlaceDetailsCard({
         setLoading(false);
       })
       .catch((err) => {
+        if (cancelled) return;
         console.error('Error fetching dynamic place details:', err);
         setError(true);
         setLoading(false);
       });
+
+    return () => { cancelled = true; };
   }, [placesLib, title, rating, formattedAddress, phoneNumber, website, openingHours, editorialSummary, userRatingCount]);
 
   if (loading) {
