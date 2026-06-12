@@ -22,14 +22,22 @@ const MAPS_KEY =
   '';
 const MAPS_KEY_VALID = Boolean(MAPS_KEY) && MAPS_KEY !== 'YOUR_API_KEY' && MAPS_KEY.length > 10;
 
+// ISO dates read as raw data ("2024-04-12") — format to match the header band ("Apr 12, 2024").
+const fmtTripDate = (d?: string) => {
+  const t = d ? Date.parse(d) : NaN;
+  return Number.isNaN(t) ? (d || '') : new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
 interface TripsPageProps {
   currentTrip?: TripBrief;
+  /** Stop count of the live trip, so its card doesn't read "0 stops". */
+  currentTripStops?: number;
   onViewChange?: (view: 'plan' | 'trips' | 'explore') => void;
   onShare?: (trip: any) => void;
   onLoadTrip?: (tripId: string) => void;
 }
 
-export default function TripsPage({ currentTrip, onViewChange, onShare, onLoadTrip }: TripsPageProps) {
+export default function TripsPage({ currentTrip, currentTripStops, onViewChange, onShare, onLoadTrip }: TripsPageProps) {
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'past' | 'draft'>('all');
 
   // Open a trip: load its authored dataset if we have one (Kyoto / Iceland),
@@ -38,7 +46,6 @@ export default function TripsPage({ currentTrip, onViewChange, onShare, onLoadTr
     if (onLoadTrip) onLoadTrip(tripId);
     else if (onViewChange) onViewChange('plan');
   };
-  const [searchQuery, setSearchQuery] = useState('');
 
   const liveDraft = useMemo(() => {
     if (!currentTrip) return null;
@@ -48,12 +55,12 @@ export default function TripsPage({ currentTrip, onViewChange, onShare, onLoadTr
       destination: currentTrip.destination,
       startDate: currentTrip.startDate,
       endDate: currentTrip.endDate,
-      stopCount: 0, // In a real app we'd count the stops in itineraryDays
+      stopCount: currentTripStops ?? 0,
       status: 'upcoming' as const,
       imageUrl: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?q=80&w=600&auto=format&fit=crop',
       participants: ['usr-1']
     };
-  }, [currentTrip]);
+  }, [currentTrip, currentTripStops]);
 
   const allTrips = useMemo(() => {
     const archive = [...INITIAL_TRIP_ARCHIVE];
@@ -63,17 +70,11 @@ export default function TripsPage({ currentTrip, onViewChange, onShare, onLoadTr
     return archive;
   }, [liveDraft]);
 
-  const filteredTrips = allTrips.filter(trip => {
-    const matchesFilter = filter === 'all' || 
-                         (filter === 'upcoming' && trip.status === 'upcoming') ||
-                         (filter === 'past' && (trip.status === 'completed' || trip.status === 'archived')) ||
-                         (filter === 'draft' && trip.status === 'draft');
-    
-    const matchesSearch = trip.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         trip.destination.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    return matchesFilter && matchesSearch;
-  });
+  const filteredTrips = allTrips.filter(trip =>
+    filter === 'all' ||
+    (filter === 'upcoming' && trip.status === 'upcoming') ||
+    (filter === 'past' && (trip.status === 'completed' || trip.status === 'archived')) ||
+    (filter === 'draft' && trip.status === 'draft'));
 
   const upcoming = filteredTrips.filter(t => t.status === 'upcoming');
   const completed = filteredTrips.filter(t => t.status === 'completed' || t.status === 'archived');
@@ -93,37 +94,33 @@ export default function TripsPage({ currentTrip, onViewChange, onShare, onLoadTr
     .filter(Boolean);
 
   return (
-    <div className="flex h-full w-full bg-slate-50 overflow-hidden">
+    <div className="flex h-full w-full bg-bg-panel-muted overflow-hidden">
       {/* Left List Panel */}
       <aside className="w-[520px] bg-white border-r border-border-subtle flex flex-col h-full shrink-0">
-        <div className="p-6 border-b border-border-subtle">
-          <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-bold text-on-surface tracking-tight">Trip Archive</h1>
-            <button className="flex items-center gap-2 bg-primary text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:opacity-90 active:scale-95 transition-all cursor-pointer">
-              <Plus className="w-4 h-4" />
-              New Trip
-            </button>
-          </div>
-
-          <div className="flex gap-1 bg-slate-100 p-1 rounded-full w-fit">
+        <div className="p-4 border-b border-border-subtle flex items-center justify-between gap-3">
+          <div className="flex gap-1 bg-surface-container p-1 rounded-full w-fit">
             {(['all', 'upcoming', 'past', 'draft'] as const).map(f => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all capitalize cursor-pointer ${
-                  filter === f ? 'bg-white text-primary shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                className={`px-4 py-1.5 rounded-full text-[13px] font-bold transition-all capitalize cursor-pointer ${
+                  filter === f ? 'bg-white text-primary shadow-sm' : 'text-secondary hover:text-on-surface'
                 }`}
               >
                 {f}
               </button>
             ))}
           </div>
+          <button className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-accent-primary-hover active:scale-95 transition-all cursor-pointer shrink-0">
+            <Plus className="w-4 h-4" />
+            New Trip
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
           {upcoming.length > 0 && (
             <section>
-              <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Upcoming</h2>
+              <h2 className="text-xs font-semibold text-secondary uppercase tracking-widest mb-4">Upcoming</h2>
               <div className="space-y-4">
                 {upcoming.map(trip => (
                   <TripArchiveCard 
@@ -139,7 +136,7 @@ export default function TripsPage({ currentTrip, onViewChange, onShare, onLoadTr
 
           {completed.length > 0 && (
             <section>
-              <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Past Trips</h2>
+              <h2 className="text-xs font-semibold text-secondary uppercase tracking-widest mb-4">Past Trips</h2>
               <div className="space-y-4">
                 {completed.map(trip => (
                   <TripArchiveCard
@@ -155,7 +152,7 @@ export default function TripsPage({ currentTrip, onViewChange, onShare, onLoadTr
 
           {drafts.length > 0 && (
             <section>
-              <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Drafts</h2>
+              <h2 className="text-xs font-semibold text-secondary uppercase tracking-widest mb-4">Drafts</h2>
               <div className="space-y-4">
                 {drafts.map(trip => (
                   <TripArchiveCard 
@@ -172,9 +169,9 @@ export default function TripsPage({ currentTrip, onViewChange, onShare, onLoadTr
       </aside>
 
       {/* Right Map/Insights Panel */}
-      <section className="flex-1 relative overflow-hidden bg-slate-100 flex flex-col">
+      <section className="flex-1 relative overflow-hidden bg-bg-panel-muted flex flex-col">
         <div className="absolute top-6 left-6 flex flex-col gap-4 z-10">
-          <div className="bg-white/90 backdrop-blur-md p-5 rounded-2xl border border-white/60 shadow-xl w-64 animate-fadeIn">
+          <div className="bg-white p-4 rounded-xl border border-border-subtle shadow-md w-64 animate-fadeIn">
             <h4 className="text-sm font-bold text-on-surface mb-3 flex items-center gap-2">
               <Globe className="w-4 h-4 text-primary" /> Visited Insights
             </h4>
@@ -192,7 +189,7 @@ export default function TripsPage({ currentTrip, onViewChange, onShare, onLoadTr
         </div>
 
         {/* Real Google Map for Archive */}
-        <div className="flex-1 w-full bg-[#eef2f8] animate-fadeIn">
+        <div className="flex-1 w-full bg-bg-panel-muted animate-fadeIn">
           {MAPS_KEY_VALID ? (
           <Map
             defaultCenter={{ lat: 30, lng: 130 }}
@@ -212,11 +209,11 @@ export default function TripsPage({ currentTrip, onViewChange, onShare, onLoadTr
               return (
                 <AdvancedMarker key={trip.id} position={coords}>
                   <div className="relative group">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 border-white shadow-lg transition-transform group-hover:scale-110 ${isUpcoming ? 'bg-primary text-white' : 'bg-emerald-500 text-white'}`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 border-white shadow-lg transition-transform group-hover:scale-110 ${isUpcoming ? 'bg-primary text-white' : 'bg-success text-white'}`}>
                       <Compass className="w-4 h-4" />
                     </div>
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white px-2 py-1 rounded shadow-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                      <p className="text-[10px] font-bold text-on-surface">{trip.title}</p>
+                      <p className="text-xs font-medium text-on-surface">{trip.title}</p>
                     </div>
                   </div>
                 </AdvancedMarker>
@@ -232,9 +229,6 @@ export default function TripsPage({ currentTrip, onViewChange, onShare, onLoadTr
           )}
         </div>
 
-        <div className="absolute bottom-6 left-6 pointer-events-none">
-          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em]">Global Presence Archive © 2026</span>
-        </div>
       </section>
     </div>
   );
@@ -270,30 +264,30 @@ function TripArchiveCard(props: { trip: TripArchiveItem; key?: any; onClick?: ()
   const isCompleted = trip.status === 'completed' || trip.status === 'archived';
 
   return (
-    <motion.div 
+    <motion.div
       whileHover={{ y: -2 }}
       onClick={onClick}
-      className={`bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden group cursor-pointer hover:border-primary/40 hover:shadow-md transition-all ${!isUpcoming ? 'opacity-90 grayscale-[10%]' : ''}`}
+      className={`bg-white rounded-xl border border-border-subtle shadow-sm overflow-hidden group cursor-pointer hover:border-primary/40 hover:shadow-md transition-all ${!isUpcoming ? 'opacity-90 grayscale-[10%]' : ''}`}
     >
       <div className="aspect-[2/1] w-full relative overflow-hidden">
-        <img 
-          src={trip.imageUrl} 
-          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
+        <img
+          src={trip.imageUrl}
+          className="w-full h-full object-cover"
           alt={trip.title}
           referrerPolicy="no-referrer"
         />
         <div className="absolute top-4 left-4">
-          <div className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase border shadow-sm ${
-            isUpcoming ? 'bg-primary text-white border-primary' : 
-            isDraft ? 'bg-amber-100 text-amber-700 border-amber-200' :
-            'bg-emerald-100 text-emerald-700 border-emerald-200'
+          <div className={`px-2 py-0.5 rounded-full text-xs font-medium tracking-wider uppercase border shadow-sm ${
+            isUpcoming ? 'bg-primary text-white border-primary' :
+            isDraft ? 'bg-warning/10 text-warning border-warning/30' :
+            'bg-success/10 text-success border-success/30'
           }`}>
             {trip.status}
           </div>
         </div>
         {trip.archiveEntryNumber && (
           <div className="absolute bottom-4 left-4">
-             <div className="bg-black/40 backdrop-blur-md px-2 py-1 rounded-md text-[9px] font-bold text-white uppercase tracking-widest border border-white/20">
+             <div className="bg-on-surface/70 px-2 py-0.5 rounded-md text-xs font-medium text-white uppercase tracking-widest">
                 ENTRY #{trip.archiveEntryNumber}
              </div>
           </div>
@@ -302,10 +296,10 @@ function TripArchiveCard(props: { trip: TripArchiveItem; key?: any; onClick?: ()
       <div className="p-4 flex flex-col gap-2">
         <div className="flex justify-between items-start">
           <div className="flex-1 pr-4">
-            <h3 className="text-base font-bold text-on-surface leading-tight group-hover:text-primary transition-colors">{trip.title}</h3>
-            <p className="text-xs text-slate-400 font-medium mt-1 flex items-center gap-1.5">
+            <h3 className="text-sm font-semibold text-on-surface leading-tight group-hover:text-primary transition-colors">{trip.title}</h3>
+            <p className="text-xs text-secondary font-medium mt-1 flex items-center gap-1.5">
                <Calendar className="w-3 h-3" />
-               {trip.startDate} {trip.endDate ? `— ${trip.endDate}` : ''}
+               {fmtTripDate(trip.startDate)}{trip.endDate ? ` – ${fmtTripDate(trip.endDate)}` : ''}
             </p>
           </div>
           <button
@@ -325,23 +319,22 @@ function TripArchiveCard(props: { trip: TripArchiveItem; key?: any; onClick?: ()
           </button>
         </div>
         
-        <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+        <div className="flex items-center justify-between mt-2 pt-2 border-t border-border-subtle">
            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1 text-[11px] font-bold text-slate-500">
+              <div className="flex items-center gap-1 text-xs font-medium text-secondary">
                 <MapPin className="w-3 h-3" /> {trip.destination.split(',')[0]}
               </div>
-              <div className="flex items-center gap-1 text-[11px] font-bold text-slate-500">
+              <div className="flex items-center gap-1 text-xs font-medium text-secondary">
                 <Navigation className="w-3 h-3" /> {trip.stopCount} stops
               </div>
            </div>
-           {trip.participants && (
+           {trip.participants && trip.participants.length > 0 && (
               <div className="flex -space-x-1.5">
                  {trip.participants.map((p, i) => (
-                   <div key={i} className="w-5 h-5 rounded-full bg-slate-200 border border-white overflow-hidden shadow-sm">
+                   <div key={i} className="w-5 h-5 rounded-full bg-surface-container border border-white overflow-hidden shadow-sm">
                       <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p}`} className="w-full h-full object-cover" />
                    </div>
                  ))}
-                 <div className="w-5 h-5 rounded-full bg-slate-100 border border-white flex items-center justify-center text-[8px] font-bold text-slate-400 shadow-sm">+2</div>
               </div>
            )}
         </div>
@@ -355,7 +348,7 @@ function InsightRow({ label, value, color }: { label: string; value: string; col
     <div className="flex justify-between items-center">
       <div className="flex items-center gap-2">
         <div className={`w-2 h-2 rounded-full ${color}`} />
-        <span className="text-xs font-medium text-slate-600">{label}</span>
+        <span className="text-xs font-medium text-on-surface-variant">{label}</span>
       </div>
       <span className="text-xs font-bold text-on-surface">{value}</span>
     </div>

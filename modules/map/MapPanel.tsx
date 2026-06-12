@@ -247,7 +247,7 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
         <div className="flex-1 bg-slate-50 relative overflow-hidden flex items-center justify-center p-6">
           <div className="max-w-md w-full bg-white p-6 rounded-2xl border border-dashed border-slate-300 shadow-sm text-center">
             <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4 text-blue-600">
-              <MapPin className="w-6 h-6 animate-bounce" />
+              <MapPin className="w-6 h-6" />
             </div>
             <h2 className="text-[15px] font-bold text-slate-900 mb-2">Google Maps Key Needed</h2>
             <p className="text-xs text-slate-600 mb-4 leading-relaxed">
@@ -330,7 +330,7 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
                 >
                   {isSelected && (
                     <div
-                      className="absolute inset-0 w-9 h-9 rounded-full animate-ping -translate-x-[2px] -translate-y-[2px]"
+                      className="absolute inset-0 w-9 h-9 rounded-full -translate-x-[2px] -translate-y-[2px]"
                       style={{ backgroundColor: `${categoryColor}33` }}
                     />
                   )}
@@ -366,7 +366,7 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
               >
                 <div className="relative" style={{ width: '32px', height: '32px' }}>
                   {isSelected && (
-                    <div className={`absolute inset-0 w-8 h-8 rounded-full animate-ping ${isFood ? 'bg-orange-500/20' : 'bg-blue-500/20'}`} />
+                    <div className={`absolute inset-0 w-8 h-8 rounded-full ${isFood ? 'bg-orange-500/20' : 'bg-blue-500/20'}`} />
                   )}
                   <div
                     className={`rounded-full flex items-center justify-center shadow-md transition-all duration-150 ${

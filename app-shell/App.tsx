@@ -1237,6 +1237,7 @@ function AppContent() {
             <div className="absolute inset-0 z-20 bg-background p-2 animate-fadeIn">
               <TripsPage
                 currentTrip={appState.tripBrief}
+                currentTripStops={appState.itineraryItems.length}
                 onViewChange={(view) => setAppState(prev => ({ ...prev, currentView: view }))}
                 onShare={handleOpenShare}
                 onLoadTrip={handleLoadTrip}
