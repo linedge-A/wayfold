@@ -5,15 +5,29 @@
 
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
+import { extractCandidates } from './modules/ingestion/extractCandidates';
+import { dispatchIngestion, toSuggestion } from './modules/ingestion/dispatchIngestion';
+import { enqueue, listPending, ack } from './modules/ingestion/captureQueue';
+import { securityHeaders, corsAllowlist, rateLimit, requireApiToken } from './server-security';
 
 dotenv.config();
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '256kb' }));          // bound request bodies (was unbounded default)
+app.use(securityHeaders);                           // nosniff / frame-deny / referrer / (prod) CSP
+app.use('/api', corsAllowlist);                     // cross-origin allowed only for CORS_ALLOWED_ORIGINS
+app.use('/api', rateLimit({ windowMs: 60_000, max: 90 }));   // general per-IP cap
+// AI proxy + state-changing ingest endpoints: tighter per-IP cap + optional shared-token gate
+app.use(['/api/copilot', '/api/ingest'], rateLimit({ windowMs: 60_000, max: 20 }), requireApiToken);
 
-const PORT = 4123;
+// Liveness probe for the proxy deploy (Cloud Run / Fly health checks). Outside `/api`, so it is
+// never rate-limited or token-gated, and is defined before the SPA catch-all so it always wins.
+app.get('/healthz', (_req, res) => { res.json({ ok: true, service: 'wayfold-proxy' }); });
+
+const PORT = Number(process.env.PORT) || 3000;
 
 // Initialize Google Gen AI client with server key if present
 let ai: GoogleGenAI | null = null;
@@ -35,11 +49,101 @@ if (process.env.GEMINI_API_KEY) {
   console.log('GEMINI_API_KEY not found in server environment. Running in mock intelligent mode.');
 }
 
+// ── Guarded page fetch for pasted links ───────────────────────────────────────────────────────
+// A bare URL carries no extractable text, so previously it fell through to the canned demo
+// fallback ("3 signature places"). Fetch the page itself (with SSRF guards) and run the SAME
+// deterministic ingestion core over its real content. Guards: http(s) only, public hosts only
+// (no localhost / private / link-local ranges), 6s timeout, HTML/plain only, capped size.
+const PRIVATE_HOST = /^(localhost$|0\.|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)|\.local$|^\[/i;
+async function fetchPageForExtraction(rawUrl: string): Promise<{ text: string; jsonld: any[] } | null> {
+  let u: URL;
+  try { u = new URL(rawUrl); } catch { return null; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  if (PRIVATE_HOST.test(u.hostname)) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const r = await fetch(u.href, { signal: ctrl.signal, redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WayfoldIngest/0.1)', Accept: 'text/html,text/plain' } });
+    const ct = String(r.headers.get('content-type') || '');
+    if (!r.ok || !/text\/(html|plain)/i.test(ct)) return null;
+    const html = (await r.text()).slice(0, 600_000);
+    const jsonld: any[] = [];
+    for (const m of html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+      try { const p = JSON.parse(m[1]); Array.isArray(p) ? jsonld.push(...p) : jsonld.push(p); } catch { /* skip bad blocks */ }
+    }
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<\/(p|div|li|h[1-6]|br|tr)[^>]*>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&amp;/g, '&').replace(/&#39;|&apos;|&#8217;/g, "'").replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n')
+      .slice(0, 30_000); // parser-input cap (security review LOW-2)
+    return { text, jsonld };
+  } catch { return null; } finally { clearTimeout(timer); }
+}
+
 // REST Copilot API Proxy
 app.post('/api/copilot', async (req, res) => {
   const { query, appState } = req.body;
   const currentItems = appState?.itineraryItems || [];
   const norm = (query || '').toLowerCase();
+
+  // A pasted booking confirmation is parsed DETERMINISTICALLY (never sent to the model) so it
+  // commits as a locked anchor via the client's applyBookings wiring. Booking-text → bookings;
+  // blog/place text falls through to the normal flow below.
+  try {
+    const ing = dispatchIngestion({ surface: 'copilot-paste', content: 'text', rawText: String(query || ''), areaHint: appState?.tripBrief?.destination || '' });
+    if (ing.bookings.length) {
+      const sug = toSuggestion(ing);
+      return res.json({ message: sug.message, suggestion: sug.suggestion, bookings: ing.bookings, candidates: ing.candidates });
+    }
+  } catch { /* fall through to the normal copilot flow */ }
+
+  // Pasted link → fetch the page (guarded) and run the shared deterministic core on its REAL
+  // content (JSON-LD first, then prose), instead of guessing from the bare URL string.
+  const pastedUrl = String(query || '').match(/https?:\/\/[^\s"'<>)]+/i)?.[0];
+  if (pastedUrl) {
+    const page = await fetchPageForExtraction(pastedUrl);
+    if (page) {
+      try {
+        const areaHint = appState?.tripBrief?.destination || '';
+        const host = new URL(pastedUrl).hostname.replace(/^www\./, '');
+        const pageReply = (places: any[], how: string) => res.json({
+          message: `I read **${host}** and pulled **${places.length}** place${places.length === 1 ? '' : 's'} from the page itself${how}. Import them into your Research Pocket below.`,
+          suggestion: {
+            type: 'Smart Add',
+            title: `${places.length} place${places.length === 1 ? '' : 's'} from ${host}`,
+            description: 'One-click import. Google details (location, hours, rating) fill in on add.',
+            actionLabel: `Add ${places.length} to Pocket`,
+            itemsToAdd: places,
+          },
+          bookings: [],
+          candidates: places,
+        });
+
+        // 1) Structured data first — schema.org JSON-LD is exact when the page carries it.
+        if (page.jsonld.length) {
+          const ing = dispatchIngestion({ surface: 'copilot-paste', content: 'jsonld', jsonld: page.jsonld, rawText: page.text, url: pastedUrl, areaHint });
+          if (ing.candidates.length || ing.bookings.length) {
+            const sug = toSuggestion(ing);
+            return res.json({ message: sug.message, suggestion: sug.suggestion, bookings: ing.bookings, candidates: ing.candidates });
+          }
+        }
+        // 2) AI extraction over the page text — curated, real place names (full-page prose is too
+        //    noisy for the phrase extractor: it picks up nav/affiliate junk).
+        const aiPlaces = await geminiExtractPlaces(page.text, 20_000, 15).catch(() => []);
+        if (aiPlaces.length) {
+          const enriched = aiPlaces.map((p: any) => ({ ...p, area: p.area || areaHint, website: pastedUrl }));
+          return pageReply(enriched, '');
+        }
+        // 3) Deterministic fallback (no AI key): keep only confident hits, ranked + capped.
+        const ing = dispatchIngestion({ surface: 'copilot-paste', content: 'text', sourceType: 'blog', rawText: page.text, url: pastedUrl, areaHint });
+        const byConf = [...ing.candidates].sort((a: any, b: any) => (b.signals?.confidence ?? 0) - (a.signals?.confidence ?? 0)).slice(0, 10);
+        if (byConf.length) return pageReply(byConf, ' — tagged with the writer\'s verdicts where stated');
+      } catch { /* fall through */ }
+    }
+  }
 
   // If live AI is ready, process through gemini-flash-latest
   if (ai) {
@@ -164,6 +268,28 @@ app.post('/api/copilot', async (req, res) => {
   const hasPlacesQuery = norm.includes('places') || norm.includes('spot') || norm.includes('best') || norm.includes('top') || norm.includes('restaurant') || norm.includes('eat') || norm.includes('food') || norm.includes('blog') || norm.includes('list') || norm.includes('museum') || norm.includes('screenshot');
 
   if (hasUrl || hasPlacesQuery) {
+    // Reuse the shared deterministic ingestion core (the SAME parser the client and the future
+    // Chrome extension use) to extract REAL places from the actual pasted text/URL — instead of
+    // returning canned placeholders. Falls back to the demo set only when nothing extracts
+    // (e.g. a bare "best food" command with no place names to parse).
+    const realPlaces = extractCandidates({
+      rawText: String(query || ''),
+      sourceType: 'blog',
+      areaHint: appState?.tripBrief?.destination || '',
+    });
+    if (realPlaces.length) {
+      return res.json({
+        message: `I extracted **${realPlaces.length}** place${realPlaces.length === 1 ? '' : 's'} from your text — verdicts and best-time tags came along. Import them into your Research Pocket with one click.`,
+        suggestion: {
+          type: 'Smart Add',
+          title: `Import ${realPlaces.length} place${realPlaces.length === 1 ? '' : 's'}`,
+          description: 'Extracted from your link/text by the shared ingestion parser.',
+          actionLabel: `Add ${realPlaces.length} to Pocket`,
+          itemsToAdd: realPlaces,
+        },
+      });
+    }
+
     let suggestedPlaces = [];
     let messageText = "";
     let titleText = "";
@@ -413,6 +539,95 @@ app.post('/api/copilot', async (req, res) => {
   });
 });
 
+// AI place-extraction fallback — reuses the SAME `ai` client as /api/copilot (no second client).
+// Only called when the deterministic core finds nothing.
+async function geminiExtractPlaces(text: string, maxChars = 2000, maxPlaces = 8): Promise<any[]> {
+  if (!ai || !text) return [];
+  const systemInstruction = `Extract up to ${maxPlaces} real, named places (restaurants, sights, cafes, hotels) the text RECOMMENDS VISITING.
+Ignore navigation, ads, affiliate products, and the site's own name.
+Return ONLY a JSON array: [{ "title": string, "category": "food"|"sight"|"stay", "area": string, "tags": string[] }]. No prose.`;
+  try {
+    const r = await ai.models.generateContent({
+      model: process.env.GEMINI_FLASH_MODEL || 'gemini-flash-latest',
+      contents: String(text).slice(0, maxChars),
+      config: { systemInstruction, temperature: 0 },
+    });
+    const m = (r.text || '').match(/\[[\s\S]*\]/);
+    const arr = m ? JSON.parse(m[0]) : [];
+    return Array.isArray(arr)
+      ? arr.map((p: any, i: number) => ({
+          id: `place-ai-${Date.now()}-${i}`,
+          title: p.title,
+          category: p.category === 'food' || p.category === 'stay' ? p.category : 'sight',
+          area: p.area || '',
+          tags: Array.isArray(p.tags) ? p.tags : [],
+          sourceType: 'ai',
+        })).filter((p: any) => p.title)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+// Surface-agnostic ingestion endpoint. The copilot paste path, a forward-to-inbox webhook, and the
+// future Chrome extension all POST an IngestionRequest here. Runs the shared deterministic core
+// (dispatchIngestion — the SAME parsers the client uses); only on no deterministic hit does it fall
+// back to the AI extractor above. Returns bookings (→ applyBookings) + place candidates (→ Pocket).
+app.post('/api/ingest', async (req, res) => {
+  const request = req.body?.request || req.body || {};
+  let result;
+  try {
+    result = dispatchIngestion(request);
+  } catch {
+    return res.status(400).json({ message: 'Invalid ingestion request.' });
+  }
+
+  if (result.bookings.length || result.candidates.length) {
+    const sug = toSuggestion(result);
+    return res.json({ message: sug.message, suggestion: sug.suggestion, bookings: result.bookings, candidates: result.candidates });
+  }
+
+  if (request.rawText) {
+    const aiPlaces = await geminiExtractPlaces(request.rawText).catch(() => []);
+    if (aiPlaces.length) {
+      return res.json({
+        message: `Extracted ${aiPlaces.length} place${aiPlaces.length === 1 ? '' : 's'} with AI assist — staged in your Pocket.`,
+        suggestion: { type: 'Smart Add', title: `Import ${aiPlaces.length} places`, description: 'AI-extracted from your text.', actionLabel: `Add ${aiPlaces.length} to Pocket`, itemsToAdd: aiPlaces },
+        candidates: aiPlaces,
+        bookings: [],
+      });
+    }
+  }
+
+  return res.json({ message: result.warnings[0] || 'No bookings or places found.', bookings: [], candidates: [] });
+});
+
+// ── Capture inbox: the bridge for surfaces that can't mutate trip state directly (the extension). ──
+// There is no server-side trip store — the web app holds state client-side. So a capture is QUEUED
+// per account here; the web app drains it on load/focus and applies it through the existing paths
+// (candidates → Pocket suggestion, bookings → applyBookings). Reuses, doesn't re-implement.
+const accountOf = (req: any): string => {
+  const m = String(req.headers?.authorization || '').match(/^Bearer\s+(.+)$/i);
+  return m ? m[1].slice(0, 64) : 'default';
+};
+
+app.post('/api/ingest/commit', (req, res) => {
+  const { bookings, candidates, source } = req.body || {};
+  if (!(bookings?.length) && !(candidates?.length)) return res.status(400).json({ ok: false, message: 'Nothing to commit.' });
+  const account = accountOf(req);
+  const rec = enqueue(account, { bookings, candidates, source });
+  return res.json({ ok: true, id: rec.id, queued: listPending(account).length });
+});
+
+app.get('/api/ingest/pending', (req, res) => {
+  return res.json({ captures: listPending(accountOf(req)) });
+});
+
+app.post('/api/ingest/ack', (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  return res.json({ ok: true, cleared: ack(accountOf(req), ids) });
+});
+
 // Configure Vite middleware in development, serve compiled SPA assets in production
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
@@ -424,12 +639,19 @@ async function startServer() {
     app.use(vite.middlewares);
     console.log('Vite development middleware connected.');
   } else {
+    // Combined mode serves the built SPA; proxy-only deploys ship without a `dist/`. Guard on its
+    // presence so the SAME image works either way — when absent, skip static + catch-all and the
+    // service is a pure API proxy (non-API routes 404 cleanly instead of erroring on a missing file).
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-    console.log('Production static asset pipelines primed.');
+    if (fs.existsSync(path.join(distPath, 'index.html'))) {
+      app.use(express.static(distPath));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+      console.log('Production static asset pipelines primed (combined SPA + API).');
+    } else {
+      console.log('No dist/ found — running as a standalone API proxy.');
+    }
   }
 
   app.listen(PORT, '0.0.0.0', () => {

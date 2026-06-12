@@ -3,17 +3,26 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { APIProvider, Map, AdvancedMarker, InfoWindow, useMap } from '@vis.gl/react-google-maps';
 import { Coffee, Compass, MapPin } from 'lucide-react';
 import { ItineraryItem, PlaceItem } from '@/shared/types/index';
-import MapErrorBoundary from '@/shared/utils/MapErrorBoundary';
+import { zoomCluster, type ClusterPoint, type ZoomClusterResult, type LatLngBounds as ZCBounds } from './zoomCluster';
+
+// Zoom thresholds for the level-of-detail aggregation (see ./zoomCluster):
+// < CITY_ZOOM → shaded country clusters · < PIN_ZOOM → city dots (# of POI) · >= PIN_ZOOM → in-city scatter.
+const CITY_ZOOM = 5;
+const PIN_ZOOM = 11;
 
 interface MapPanelProps {
   items: ItineraryItem[];
   selectedItemId?: string;
+  hoveredItemId?: string;
   onSelectItem?: (id: string | undefined) => void;
+  onHoverItem?: (id: string | undefined) => void;
   pocketItems?: PlaceItem[];
+  /** Reports the live map zoom so a sibling list can adapt its area grouping to the same scale. */
+  onZoomChange?: (zoom: number) => void;
 }
 
 // Safely resolve the Google Maps API Key from the Vite define setup
@@ -106,31 +115,130 @@ function PolylineOverlay({ points }: { points: google.maps.LatLngLiteral[] }) {
   return null;
 }
 
-export default function MapPanel({ items, selectedItemId, onSelectItem, pocketItems }: MapPanelProps) {
+// Gently recenter the map on the item selected elsewhere (calendar / pocket),
+// so cross-pane selection stays visually connected without changing zoom.
+function SelectionPanner({ target }: { target: google.maps.LatLngLiteral | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map || !target) return;
+    map.panTo(target);
+  }, [map, target?.lat, target?.lng]);
+
+  return null;
+}
+
+// Report the live zoom + viewport bounds on every map idle, so the panel can pick the
+// level-of-detail tier. (Provider glue around the pure ./zoomCluster logic.)
+function ZoomTracker({ onChange }: { onChange: (zoom: number, bounds: ZCBounds | null) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map) return;
+    const emit = () => {
+      const lb = map.getBounds();
+      let bounds: ZCBounds | null = null;
+      if (lb) {
+        const ne = lb.getNorthEast();
+        const sw = lb.getSouthWest();
+        bounds = { north: ne.lat(), south: sw.lat(), east: ne.lng(), west: sw.lng() };
+      }
+      onChange(map.getZoom() ?? 0, bounds);
+    };
+    emit();
+    const listener = map.addListener('idle', emit);
+    return () => listener.remove();
+  }, [map, onChange]);
+  return null;
+}
+
+// Aggregated tiers: translucent "shaded region" circles (country/city) + a count bubble
+// per cluster showing the # of POI. Clicking a region drills into the in-city scatter.
+function AggregationLayer({ result }: { result: ZoomClusterResult<ClusterPoint> }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map || result.tier === 'pins') return;
+    const radiusM = result.tier === 'country' ? 220000 : 16000; // continental vs city-sized shading
+    const circles = result.clusters.map(c => new google.maps.Circle({
+      map, center: c.centroid, radius: radiusM,
+      fillColor: '#2F80ED', fillOpacity: 0.12,
+      strokeColor: '#2F80ED', strokeOpacity: 0.35, strokeWeight: 1, clickable: false,
+    }));
+    return () => circles.forEach(c => c.setMap(null));
+  }, [map, result]);
+
+  if (result.tier === 'pins') return null;
+  return (
+    <>
+      {result.clusters.map(c => (
+        <AdvancedMarker
+          key={c.key}
+          position={c.centroid}
+          onClick={() => { map?.panTo(c.centroid); map?.setZoom(PIN_ZOOM); }}
+        >
+          <div
+            className="flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full bg-primary text-white shadow-lg border-2 border-white cursor-pointer hover:scale-105 transition-transform"
+            title={`${c.count} saved in ${c.label} — click to zoom in`}
+          >
+            <span className="w-6 h-6 rounded-full bg-white/25 flex items-center justify-center text-xs font-bold">{c.count}</span>
+            <span className="text-[11px] font-bold whitespace-nowrap max-w-[130px] truncate">{c.label}</span>
+          </div>
+        </AdvancedMarker>
+      ))}
+    </>
+  );
+}
+
+export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelectItem, onHoverItem, pocketItems, onZoomChange }: MapPanelProps) {
   // Filter active day itinerary items (filter out lodging/airport transit from primary route connections if desired, or keep classic ones)
-  const mapItems = items
+  // Memoized so the derived arrays keep a stable identity when `items` is unchanged —
+  // otherwise a fresh array every render re-fires the bounds/polyline effects below.
+  const mapItems = useMemo(() => items
     .filter(item => item.category !== 'stay' && item.category !== 'transit')
     .map((item, index) => ({
       ...item,
       latLng: getLatLng(item, index),
       indexOrder: index + 1
-    }));
+    })), [items]);
 
-  const activePocketItems = (pocketItems || [])
-    .filter(item => selectedItemId === item.id)
-    .map((item, index) => ({
-      ...item,
-      latLng: getLatLng(item, index + 20)
-    }));
+  // Show ALL saved pocket spots as faint "candidate" markers so the Research
+  // Pocket is spatially integrated with the day's route. Skip any already
+  // scheduled into today's route to avoid duplicate pins.
+  const candidateItems = useMemo(() => {
+    const routeIds = new Set(mapItems.map(i => i.id));
+    return (pocketItems || [])
+      .filter(item => !routeIds.has(item.id))
+      .map((item, index) => ({
+        ...item,
+        latLng: getLatLng(item, index + 20)
+      }));
+  }, [pocketItems, mapItems]);
 
   // Find selected item representation to display modal/dialog details InfoWindow
   const selectedItem = (
-    mapItems.find(item => item.id === selectedItemId) || 
-    activePocketItems.find(item => item.id === selectedItemId)
+    mapItems.find(item => item.id === selectedItemId) ||
+    candidateItems.find(item => item.id === selectedItemId)
   ) as any;
 
-  // Collect all currently outputted coordinate locations to feed bounds fitter
-  const allPoints = [...mapItems.map(i => i.latLng), ...activePocketItems.map(i => i.latLng)];
+  // Fit bounds to the day's route so it stays framed; if today has no mapped
+  // stops, frame the saved candidates instead so the pocket keeps context.
+  const allPoints = useMemo(() => mapItems.length > 0
+    ? mapItems.map(i => i.latLng)
+    : candidateItems.map(i => i.latLng), [mapItems, candidateItems]);
+
+  // Level-of-detail: aggregate all shown points into shaded regions / city dots when zoomed
+  // out, scatter individual pins when zoomed in. Tier is driven by the live map zoom + bounds.
+  const [view, setView] = useState<{ zoom: number; bounds: ZCBounds | null }>({ zoom: 13, bounds: null });
+  const handleView = useCallback((zoom: number, bounds: ZCBounds | null) => setView({ zoom, bounds }), []);
+  useEffect(() => { onZoomChange?.(view.zoom); }, [view.zoom, onZoomChange]);
+  const clusterPoints = useMemo<ClusterPoint[]>(
+    () => [...mapItems, ...candidateItems].map(m => ({ id: m.id, lat: m.latLng.lat, lng: m.latLng.lng, label: (m as any).area })),
+    [mapItems, candidateItems],
+  );
+  const cluster = useMemo(
+    () => zoomCluster(clusterPoints, view.zoom, view.bounds, { cityZoom: CITY_ZOOM, pinZoom: PIN_ZOOM }),
+    [clusterPoints, view],
+  );
+  const isPins = cluster.tier === 'pins';
 
   // If the user has not pasted their active key, present a beautiful layout guide
   if (!hasValidKey) {
@@ -197,12 +305,20 @@ export default function MapPanel({ items, selectedItemId, onSelectItem, pocketIt
           {/* Auto center and scale fitting */}
           <MapBoundsFitter points={allPoints} />
 
+          {/* Pan to whatever is selected in the calendar / pocket */}
+          <SelectionPanner target={selectedItem?.latLng ?? null} />
+
+          {/* Level-of-detail: track zoom/bounds, and draw shaded regions + count dots when zoomed out */}
+          <ZoomTracker onChange={handleView} />
+          <AggregationLayer result={cluster} />
+
           {/* Chronological lines between stops removed on user request */}
 
-          {/* Active itinerary points on the map */}
-          {mapItems.map((item) => {
+          {/* Active itinerary points on the map (in-city scatter only; aggregated tiers use AggregationLayer) */}
+          {isPins && mapItems.map((item) => {
             const isSelected = selectedItemId === item.id;
-            const categoryColor = item.category === 'food' ? '#F2994A' : 
+            const isHovered = hoveredItemId === item.id;
+            const categoryColor = item.category === 'food' ? '#F2994A' :
                                 item.category === 'sight' ? '#2F80ED' :
                                 item.category === 'stay' ? '#9B51E0' :
                                 item.category === 'transit' ? '#27AE60' : '#3B82F6';
@@ -213,20 +329,25 @@ export default function MapPanel({ items, selectedItemId, onSelectItem, pocketIt
                 position={item.latLng}
                 onClick={() => onSelectItem?.(isSelected ? undefined : item.id)}
               >
-                <div className="relative" style={{ width: '36px', height: '36px' }}>
+                <div
+                  className="relative"
+                  style={{ width: '36px', height: '36px' }}
+                  onMouseEnter={() => onHoverItem?.(item.id)}
+                  onMouseLeave={() => onHoverItem?.(undefined)}
+                >
                   {isSelected && (
-                    <div 
-                      className="absolute inset-0 w-9 h-9 rounded-full animate-ping -translate-x-[2px] -translate-y-[2px]" 
+                    <div
+                      className="absolute inset-0 w-9 h-9 rounded-full animate-ping -translate-x-[2px] -translate-y-[2px]"
                       style={{ backgroundColor: `${categoryColor}33` }}
                     />
                   )}
                   <div
                     className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm border-[3px] shadow-lg transition-all duration-150 bg-white ${
-                      isSelected ? 'scale-110' : 'hover:scale-105'
+                      isSelected ? 'scale-110' : isHovered ? 'scale-110 ring-2 ring-primary/50' : 'hover:scale-105'
                     }`}
-                    style={{ 
+                    style={{
                       borderColor: categoryColor,
-                      color: categoryColor 
+                      color: categoryColor
                     }}
                   >
                     {item.indexOrder}
@@ -236,8 +357,8 @@ export default function MapPanel({ items, selectedItemId, onSelectItem, pocketIt
             );
           })}
 
-          {/* Active selected pocket item marker overlay */}
-          {activePocketItems.map((item) => {
+          {/* Saved pocket candidates — faint until selected, for spatial context (scatter only) */}
+          {isPins && candidateItems.map((item) => {
             const isSelected = selectedItemId === item.id;
             const isFood = item.category === 'food' || item.id.includes('food') || item.id.includes('market') || item.id.includes('kurasu');
             const Icon = isFood ? Coffee : Compass;
@@ -247,19 +368,21 @@ export default function MapPanel({ items, selectedItemId, onSelectItem, pocketIt
                 key={item.id}
                 position={item.latLng}
                 onClick={() => onSelectItem?.(isSelected ? undefined : item.id)}
+                zIndex={isSelected ? 50 : 1}
+                title={`Saved: ${item.title}`}
               >
-                <div className="relative" style={{ width: '36px', height: '36px' }}>
+                <div className="relative" style={{ width: '32px', height: '32px' }}>
                   {isSelected && (
-                    <div className={`absolute inset-0 w-9 h-9 rounded-full animate-ping -translate-x-[2px] -translate-y-[2px] ${isFood ? 'bg-orange-500/20' : 'bg-blue-500/20'}`} />
+                    <div className={`absolute inset-0 w-8 h-8 rounded-full animate-ping ${isFood ? 'bg-orange-500/20' : 'bg-blue-500/20'}`} />
                   )}
                   <div
-                    className={`w-9 h-9 rounded-full flex items-center justify-center border-2 shadow-lg transition-all duration-150 ${
+                    className={`rounded-full flex items-center justify-center shadow-md transition-all duration-150 ${
                       isSelected
-                        ? isFood ? 'bg-orange-500 text-white border-white scale-110' : 'bg-blue-600 text-white border-white scale-110'
-                        : isFood ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-blue-50 text-blue-600 border-blue-200'
+                        ? `w-8 h-8 border-2 scale-110 ${isFood ? 'bg-orange-500 text-white border-white' : 'bg-blue-600 text-white border-white'}`
+                        : `w-6 h-6 border border-dashed bg-white/90 hover:scale-110 hover:bg-white ${isFood ? 'text-orange-500 border-orange-300' : 'text-slate-400 border-slate-300'}`
                     }`}
                   >
-                    <Icon className="w-4 h-4" />
+                    <Icon className={isSelected ? 'w-4 h-4' : 'w-3 h-3'} />
                   </div>
                 </div>
               </AdvancedMarker>
@@ -297,7 +420,7 @@ export default function MapPanel({ items, selectedItemId, onSelectItem, pocketIt
         </Map>
        </MapErrorBoundary>
 
-        {mapItems.length === 0 && activePocketItems.length === 0 && (
+        {mapItems.length === 0 && candidateItems.length === 0 && (
           <div className="absolute inset-x-0 bottom-4 mx-auto max-w-[220px] bg-white border border-border-subtle rounded-full text-center py-1.5 px-3 shadow-md text-xs text-slate-500 font-medium pointer-events-none z-10">
             Leisure day – map centered on Kyoto
           </div>

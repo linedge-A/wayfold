@@ -53,9 +53,12 @@ for (const s of samples) {
     line(`  type=${pb.type} vendor=${pb.vendor ?? '—'} locator=${pb.locator ?? '—'} conf=${pb.confidence.toFixed(2)}`);
     line(`    when=${seg.start.dateTimeLocal ?? '—'} where=${seg.start.place ?? seg.start.code ?? '—'}${seg.end?.code ? '→' + seg.end.code : ''} label=${seg.label ?? '—'} cancelable=${pb.cancelable ?? '—'}`);
     const { record, items } = toArtifacts(pb);
-    line(`    BookingRecord: ${record.category} "${record.title}" code=${record.confirmationCode ?? '—'} confirmed=${record.confirmed} date=${record.date ?? '—'} time=${record.time ?? '—'} →linkedItemId=${record.linkedItemId}`);
+    line(`    BookingRecord: ${record.category} "${record.title}" code=${record.confirmationCode ?? '—'} status=${record.status ?? '—'} confirmed=${record.confirmed}`);
+    line(`      vendor=${record.vendor ?? '—'} from=${record.from ?? '—'} to=${record.to ?? '—'} seatOrRoom=${record.seatOrRoom ?? '—'} party=${record.party ?? '—'} price=${record.price ?? '—'}`);
+    line(`      startISO=${record.startISO ?? '—'} endISO=${record.endISO ?? '—'} linkedItemIds=[${(record.linkedItemIds ?? []).join(', ')}] sourceEmailId=${record.sourceEmailId ?? '—'}`);
+    line(`      invariants: confirmed===status==='confirmed' → ${record.confirmed === (record.status === 'confirmed')} · linkedItemId===ids[0] → ${record.linkedItemId === record.linkedItemIds?.[0]}`);
     const it = items[0];
-    line(`    Anchor item:   ${it.category} "${it.title}" reservationBound=${it.reservationBound} pin=${it.pinState} start=${it.startTime ?? '—'} note="${it.note ?? ''}"`);
+    line(`    Anchor item:   ${it.category} "${it.title}" reservationBound=${it.reservationBound} pin=${it.pinState} start=${it.startTime ?? '—'}`);
   }
 }
 

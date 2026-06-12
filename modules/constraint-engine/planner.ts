@@ -19,6 +19,7 @@
  * day's pace cap, shed first — unless pinned, which promotes it to mustkeep.
  */
 import { parseClock as parseT, fromMinutes as fmtT, haversineKm, parseHours } from './primitives';
+import { paceFor } from '../../shared/constants/pacing';
 
 export type Persona = 'family' | 'friends' | 'couple' | 'solo' | 'default';
 export type StopClass = 'anchor' | 'destination' | 'corridor';
@@ -63,11 +64,9 @@ export interface PlannerResult {
   notes: string[];
 }
 
-const PACE_BY_STYLE: Record<string, number> = { relaxing: 3, luxury: 3, balanced: 4, budget: 4, intense: 5 };
-const PERSONA_PACE_DELTA: Record<Persona, number> = { family: -1, couple: 0, solo: 0, friends: +1, default: 0 };
 const DWELL_FACTOR: Record<Persona, number> = { family: 1.3, couple: 1.1, default: 1.0, friends: 1.0, solo: 0.85 };
 const CATEGORY_TYP: Record<string, number> = { sight: 75, food: 75, stay: 60, transit: 30 };
-const DAY_START = 9 * 60, DAY_END = 22 * 60; // 9am–10pm window (room for dinners / night markets)
+const DAY_START = 9 * 60, DAY_END = 22 * 60, LATE_END = 24 * 60; // 9am–10pm window; LATE_END lets aurora/night experiences run to midnight
 const SLOT_CENTER = { am: 10 * 60, lunch: 12 * 60 + 30, pm: 15 * 60, dinner: 19 * 60 } as const;
 const PRIORITY_W: Record<string, number> = { must: 4, high: 3, medium: 2, low: 1 };
 const ROLE_W: Record<string, number> = { anchor: 3, supporting: 2, optional: 1 };
@@ -114,20 +113,51 @@ const transitMinutes = (from: EngineItem | null, to: EngineItem): number => {
 };
 const arrivalOverhead = (to: EngineItem): number =>
   (to.needsParking ? 10 : 0) + (to.ticketed ? (to.queueMin ?? 15) : 0);
-// Opening hours are a HARD window (the existing `hard` time-tier) — this is what makes a night
-// market land at night and a place that closes at 6pm not get snapped to 7pm.
-const openWindow = (it: EngineItem): [number, number] => parseHours(it.openingHours) ?? [DAY_START, DAY_END];
+// Best-time → an evening CENTER for the moments that must happen late. Drives queue order, and
+// (via timeFloor) holds the item out of the early afternoon. Morning/early need no floor — queue
+// order + opening hours already pull them first.
+const BESTTIME_CENTER: { re: RegExp; t: number }[] = [
+  { re: /aurora/, t: 20 * 60 },
+  { re: /sunset|golden/, t: 18 * 60 + 30 },
+  { re: /night/, t: 19 * 60 },
+  { re: /evening/, t: 18 * 60 + 30 },
+  { re: /sunrise|early|morning/, t: 9 * 60 + 30 },
+];
+// Opening hours are a HARD window — what makes a night market land at night and a 6pm-close place
+// not get snapped to 7pm. Aurora/night/sunset experiences with no stated hours may run past the
+// normal 10pm window, so widen their close to midnight.
+const openWindow = (it: EngineItem): [number, number] => {
+  const h = parseHours(it.openingHours);
+  if (h) return h;
+  return /aurora|night|sunset/.test(String(sig(it).bestTime || '').toLowerCase()) ? [DAY_START, LATE_END] : [DAY_START, DAY_END];
+};
 const mealCenter = (it: EngineItem): number => {
   const bt = String(sig(it).bestTime || '').toLowerCase();
-  if (/breakfast|brunch/.test(bt)) return 8 * 60 + 30;
-  if (/dinner|evening|night/.test(bt)) return 19 * 60;
+  if (/breakfast|brunch|morning|sunrise/.test(bt)) return 8 * 60 + 30;       // incl. "morning" → early
+  if (/dinner|evening|night|sunset/.test(bt)) return 19 * 60;                 // incl. "sunset" → evening
   if (/lunch|midday|noon/.test(bt)) return 12 * 60 + 30;
   const [open, close] = openWindow(it);                                     // else derive from when it's open
   if (open >= 16 * 60) return Math.max(19 * 60, open + 15);                 // opens in the evening → dinner/night
   if (close <= 15 * 60) return open <= 9 * 60 ? 8 * 60 + 30 : 12 * 60 + 30; // morning / lunch-only
   return 12 * 60 + 30;                                                       // spans midday → lunch
 };
-const prefCenter = (it: EngineItem): number => it.category === 'food' ? mealCenter(it) : SLOT_CENTER[slotOf(it)];
+// The time a stop "wants" (queue ordering): food → meal time; else its best-time center or am/pm slot.
+const timeCenter = (it: EngineItem): number => {
+  if (it.category === 'food') return mealCenter(it);
+  const bt = String(sig(it).bestTime || '').toLowerCase();
+  for (const { re, t } of BESTTIME_CENTER) if (re.test(bt)) return t;
+  return SLOT_CENTER[slotOf(it)];
+};
+// Earliest a stop may START. Meals get their meal floor; late-anchored moments (sunset/aurora/
+// night/evening) get an evening floor so they're never swept into midday. Everything else: none.
+const timeFloor = (it: EngineItem): number => {
+  if (it.category === 'food') return mealCenter(it);
+  const bt = String(sig(it).bestTime || '').toLowerCase();
+  if (/aurora/.test(bt)) return 20 * 60;
+  if (/sunset|golden|night|evening/.test(bt)) return 18 * 60 + 30;
+  return 0;
+};
+const prefCenter = (it: EngineItem): number => timeCenter(it);
 
 type Lock = 'locked' | 'mustkeep' | 'flexible';
 const lockednessOf = (it: EngineItem): Lock => {
@@ -143,7 +173,7 @@ export function generateItinerary(input: PlannerInput): PlannerResult {
   const style = input.brief.style || 'balanced';
   const interests = input.brief.interests;
   const keepAll = !!input.brief.keepAll; // re-optimize a curated itinerary: re-time/re-order, never drop
-  const pace = Math.max(2, Math.min(6, (PACE_BY_STYLE[style] ?? 4) + (PERSONA_PACE_DELTA[persona] ?? 0)));
+  const pace = paceFor(style, persona);
   const days = input.dayIds;
 
   if (!days.length) return { scheduled: [], overflow: [...input.pool], flags: ['⚠ no days provided'], notes };
@@ -221,8 +251,7 @@ export function generateItinerary(input: PlannerInput): PlannerResult {
           const it = q[i];
           const dur = dwell(it, persona);
           const [open, close] = openWindow(it);
-          let start = Math.max(cursor + transitMinutes(prevItem, it) + arrivalOverhead(it), open); // never before it opens
-          if (it.category === 'food') start = Math.max(start, mealCenter(it));                     // prefer meal time
+          const start = Math.max(cursor + transitMinutes(prevItem, it) + arrivalOverhead(it), open, timeFloor(it)); // not before it opens / its best-time floor
           if (start + dur <= Math.min(limit, close)) {                                              // fits AND still open
             scheduled.push({ ...it, dayId: d, startTime: fmtT(start), endTime: fmtT(start + dur) });
             cursor = start + dur; prevItem = it; q.splice(i, 1); placed = true; break;
@@ -236,7 +265,7 @@ export function generateItinerary(input: PlannerInput): PlannerResult {
       scheduled.push({ ...l, endTime: l.endTime || fmtT(le) });
       cursor = Math.max(cursor, le); prevItem = l;
     }
-    flush(DAY_END);
+    flush(LATE_END);                               // normal stops still capped at their close (DAY_END); only late items use the extra
     for (const it of q) {                          // anything left didn't fit the day
       if (lockednessOf(it) === 'mustkeep') flags.push(`⚠ pinned "${it.title}" couldn't fit ${d} — moved to pocket`);
       overflow.push(it);
@@ -248,7 +277,87 @@ export function generateItinerary(input: PlannerInput): PlannerResult {
   return { scheduled, overflow, flags, notes };
 }
 
-/** Tier-1 stub: order legs + allocate nights, then call generateItinerary per leg. */
-export function planTrip(): PlannerResult {
-  throw new Error('planTrip (multi-leg) not implemented — call generateItinerary per leg');
+// ─────────────────────────────────────────────────────────────────────────────
+// Tier-1: leg/night allocation for multi-city / road trips
+// ─────────────────────────────────────────────────────────────────────────────
+interface Leg { area: string; items: EngineItem[]; lat?: number; lng?: number; stops: number; lockedDayIdx: number[]; }
+
+const legCentroid = (items: EngineItem[]): { lat?: number; lng?: number } => {
+  const pts = items.filter(i => i.lat != null && i.lng != null);
+  if (!pts.length) return {};
+  return { lat: pts.reduce((s, p) => s + (p.lat as number), 0) / pts.length, lng: pts.reduce((s, p) => s + (p.lng as number), 0) / pts.length };
+};
+const dayIndex = (id?: string): number => { const m = /(\d+)/.exec(id || ''); return m ? parseInt(m[1], 10) - 1 : -1; };
+
+// Order legs along a route: start at the arrival leg (earliest locked day) or the highest-value
+// leg, then nearest-neighbour by centroid.
+const routeLegs = (legs: Leg[], interests?: string[]): Leg[] => {
+  let start = 0, bestLocked = Infinity;
+  legs.forEach((l, i) => { const e = l.lockedDayIdx.length ? Math.min(...l.lockedDayIdx) : Infinity; if (e < bestLocked) { bestLocked = e; start = i; } });
+  if (bestLocked === Infinity) { let bv = -Infinity; legs.forEach((l, i) => { const v = Math.max(...l.items.map(it => score(it, interests))); if (v > bv) { bv = v; start = i; } }); }
+  const order: Leg[] = [legs[start]]; const used = new Set([start]); let cur = start;
+  while (order.length < legs.length) {
+    let nxt = -1, nd = Infinity;
+    legs.forEach((l, i) => { if (used.has(i)) return; const d = haversineKm(legs[cur], l) ?? Number.MAX_SAFE_INTEGER; if (d < nd) { nd = d; nxt = i; } });
+    if (nxt < 0) break; order.push(legs[nxt]); used.add(nxt); cur = nxt;
+  }
+  return order;
+};
+
+// Allocate whole days per leg: ≥1 each, proportional to stop count, summing to N.
+const allocateDays = (legs: Leg[], N: number): number[] => {
+  const total = legs.reduce((s, l) => s + l.stops, 0) || 1;
+  const alloc = legs.map(l => Math.max(1, Math.round((N * l.stops) / total)));
+  const byDense = legs.map((_, i) => i).sort((a, b) => legs[b].stops / alloc[b] - legs[a].stops / alloc[a]);
+  let diff = N - alloc.reduce((a, b) => a + b, 0), g = 0;
+  while (diff > 0) { alloc[byDense[g % byDense.length]]++; diff--; g++; }
+  for (let k = byDense.length - 1; diff < 0 && g < 10000; k--, g++) { const idx = byDense[((k % byDense.length) + byDense.length) % byDense.length]; if (alloc[idx] > 1) { alloc[idx]--; diff++; } }
+  return alloc;
+};
+
+/**
+ * Tier-1 — order legs (cities) along a route, allocate nights ∝ stops, and fill each leg with
+ * generateItinerary. Spreads a thin pool across the whole date range so multi-day road trips don't
+ * leave empty days. A single-area (city) trip falls straight through to generateItinerary.
+ */
+export function planTrip(input: PlannerInput): PlannerResult {
+  const days = input.dayIds, N = days.length;
+  if (N === 0) return { scheduled: [], overflow: [...input.pool], flags: ['⚠ no days provided'], notes: [] };
+  const interests = input.brief.interests;
+  const pool = input.pool.map(it => ({ ...it }));               // clone — we stamp dayId
+
+  const byArea = new Map<string, EngineItem[]>();
+  for (const it of pool) { const k = it.area || '—'; (byArea.get(k) ?? byArea.set(k, []).get(k)!).push(it); }
+  let legs: Leg[] = [...byArea.entries()].map(([area, items]) => {
+    const c = legCentroid(items);
+    return { area, items, lat: c.lat, lng: c.lng, stops: Math.max(1, items.filter(i => classOf(i) !== 'corridor').length), lockedDayIdx: [...new Set(items.map(i => dayIndex(i.dayId)).filter(x => x >= 0))] };
+  });
+  if (legs.length <= 1) return generateItinerary(input);        // city trip — not multi-leg
+
+  const flags: string[] = [], overflow: EngineItem[] = [];
+  if (legs.length > N) {                                        // more cities than days
+    legs.sort((a, b) => b.stops - a.stops);
+    const dropped = legs.slice(N); legs = legs.slice(0, N);
+    overflow.push(...dropped.flatMap(l => l.items));
+    flags.push(`⚠ ${legs.length + dropped.length} areas over ${N} days — deferred ${dropped.map(l => l.area).join(', ')} to the pocket`);
+  }
+
+  const ordered = routeLegs(legs, interests);
+  const alloc = allocateDays(ordered, N);
+  const scheduled: EngineItem[] = [], notes: string[] = [`route: ${ordered.map((l, i) => `${l.area}×${alloc[i]}n`).join(' → ')}`];
+  let cur = 0;
+  for (let i = 0; i < ordered.length; i++) {
+    const leg = ordered[i], legDays = days.slice(cur, cur + alloc[i]); cur += alloc[i];
+    // keep a locked item on its day if it falls in this leg; spread the rest round-robin by value.
+    const flex = leg.items.filter(it => !(it.dayId && legDays.includes(it.dayId) && lockednessOf(it) === 'locked')).sort((a, b) => score(b, interests) - score(a, interests));
+    flex.forEach((it, idx) => { it.dayId = legDays[idx % legDays.length]; });
+    for (const it of leg.items) if (lockednessOf(it) === 'locked' && it.dayId && !legDays.includes(it.dayId)) flags.push(`⚠ "${it.title}" booked on ${it.dayId}, outside its ${leg.area} leg (${legDays[0]}–${legDays[legDays.length - 1]})`);
+    const r = generateItinerary({ brief: input.brief, dayIds: legDays, pool: leg.items });
+    scheduled.push(...r.scheduled); overflow.push(...r.overflow); flags.push(...r.flags);
+    notes.push(`  leg ${i + 1}: ${alloc[i]} night${alloc[i] > 1 ? 's' : ''} in ${leg.area} (${legDays[0]}${alloc[i] > 1 ? `–${legDays[legDays.length - 1]}` : ''})`);
+  }
+  const filled = new Set(scheduled.map(s => s.dayId));
+  for (const d of days) if (!filled.has(d)) flags.push(`⚠ ${d} has no stops — thin pool for that leg`);
+  notes.push(`planTrip: ${ordered.length} legs / ${N} days · scheduled ${scheduled.length} · overflow ${overflow.length}`);
+  return { scheduled, overflow, flags, notes };
 }

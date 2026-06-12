@@ -4,79 +4,41 @@
  */
 
 // ... (keep initial comments)
-import React, { useState, useEffect, Component, ErrorInfo, ReactNode } from 'react';
-import { Sparkles, Map, Bot, Compass, Plus, ShieldAlert, Calendar, AlertTriangle, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Sparkles, Map, Bot, Compass, Plus, ShieldAlert, Calendar, ChevronUp, ListChecks } from 'lucide-react';
 import { APIProvider, useMapsLibrary } from '@vis.gl/react-google-maps';
 // ...
 import TopHeader from './TopHeader';
+import { placeItemsToPool } from '@/modules/trip-brief/placeItemsToPool';
+import { applyBookings } from '@/modules/ingestion/applyBookings';
+import { regenerateFromPocket } from '@/modules/trip-brief/regenerateFromPocket';
 import ItineraryPanel from '@/modules/itinerary/ItineraryPanel';
 import MapPanel from '@/modules/map/MapPanel';
 import PocketPanel from '@/modules/pocket/PocketPanel';
 import CopilotPanel from '@/modules/copilot/CopilotPanel';
 import FocusModeSplash from './FocusModeSplash';
 import SourceOfTruthSheet from './SourceOfTruthSheet';
-import { optimizeSchedule, OptimizationResult, ProposedChange } from '@/modules/constraint-engine/optimizer';
+import { optimizeSchedule, OptimizationResult, ProposedChange, findBestDayFit } from '@/modules/constraint-engine/optimizer';
 import OptimizeScheduleModal from '@/modules/constraint-engine/OptimizeScheduleModal';
 import TripsPage from './TripsPage';
 import ExplorePage from './ExplorePage';
+import PocketBoardPage from './PocketBoardPage';
 import ShareModal from './ShareModal';
 import { AppState, CopilotMessage, PlaceItem, ItineraryItem, RevisionDelta, PocketColumn } from '@/shared/types/index';
 import { fetchPlaceSnapshot } from '@/shared/utils/placesCache';
 import { INITIAL_TRIP_BRIEF, INITIAL_DAYS, INITIAL_ITINERARY_ITEMS, INITIAL_POCKET, INITIAL_BOOKINGS, INITIAL_REVISION_DELTAS, INITIAL_MESSAGES } from '@/shared/mock-data/seedData';
+import { loadJSON, saveJSON, pocketKey } from '@/shared/utils/persistence';
+import { getTrip } from '@/shared/mock-data/trips';
 import { getLocalCopilotResponse } from '@/modules/copilot/localResponses';
+import { sessionMeter } from '@/shared/usage/sessionMeter';
 
-// Safely resolve the Google Maps API Key from multiple potential environment sources
-const API_KEY = (
-  process.env.GOOGLE_MAPS_PLATFORM_KEY ||
-  (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
-  (globalThis as any).GOOGLE_MAPS_PLATFORM_KEY ||
-  ''
-).trim();
+import ErrorBoundary from './ErrorBoundary';
+import { API_KEY, IS_VALID_KEY } from './mapsKey';
 
-// Check if the key looks like a real key and not a placeholder or empty
-const IS_VALID_KEY = Boolean(API_KEY) && 
-                    API_KEY !== 'YOUR_API_KEY' && 
-                    API_KEY.length > 10;
-
-// Simple Error Boundary to catch generic "Script error." and runtime failures
-class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
-  constructor(props: { children: ReactNode }) {
-    super(props);
-    this.state = { hasError: false };
-  }
-
-  static getDerivedStateFromError(_: Error) {
-    return { hasError: true };
-  }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("Uncaught application error:", error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="w-full h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
-          <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mb-4">
-            <AlertTriangle className="w-8 h-8" />
-          </div>
-          <h1 className="text-xl font-bold text-slate-900 mb-2">Something went wrong</h1>
-          <p className="text-sm text-slate-600 mb-6 max-w-md mx-auto">
-            The application encountered an unexpected error. This can sometimes happen due to script loading failures or API quota limits.
-          </p>
-          <button 
-            onClick={() => window.location.reload()}
-            className="px-6 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-md hover:opacity-90 transition-all cursor-pointer"
-          >
-            Reload Application
-          </button>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
-}
+// Backend proxy base URL. Empty (default) → same-origin → unchanged combined-deploy / local-dev
+// behavior. Set VITE_API_BASE to the proxy's absolute URL to serve the SPA from a CDN while the
+// keyed Gemini proxy lives elsewhere. See output/backend-proxy-brief.md.
+const API_BASE: string = ((import.meta as any).env?.VITE_API_BASE ?? '').replace(/\/$/, '');
 
 export default function App() {
   return (
@@ -95,7 +57,9 @@ function AppContent() {
     tripBrief: INITIAL_TRIP_BRIEF,
     itineraryDays: INITIAL_DAYS,
     itineraryItems: INITIAL_ITINERARY_ITEMS,
-    pocket: INITIAL_POCKET,
+    // Hydrate the Research Pocket from localStorage (per trip) so saved POIs cumulate
+    // across sessions; fall back to the seed pocket on first run / unavailable storage.
+    pocket: loadJSON(pocketKey(INITIAL_TRIP_BRIEF.id), INITIAL_POCKET),
     bookings: INITIAL_BOOKINGS,
     selectedDayId: 'day-3', // Default to Wednesday 14th to match premium screenshot
     selectedItemId: undefined,
@@ -103,11 +67,77 @@ function AppContent() {
     currentView: 'plan'
   });
 
-  const [viewType, setViewType] = useState<'day' | 'week' | 'month' | 'agenda'>('day');
+  // Persist the Research Pocket per trip so saved POIs survive reloads and stay scoped to
+  // their trip. (Hydration happens in the initial state above.)
+  useEffect(() => {
+    saveJSON(pocketKey(appState.tripBrief.id), appState.pocket);
+  }, [appState.pocket, appState.tripBrief.id]);
+
+  // Phase 3: a generated proposal (planned FROM the Research Pocket) becomes the active trip.
+  // Flatten the engine's day buckets into the board's flat itineraryItems, build the day metadata,
+  // and drop the now-scheduled POIs from the pocket (overflow stays behind for the user).
+  const handleGenerated = (result: any) => {
+    setAppState(prev => {
+      const scheduledIds = new Set<string>();
+      const itineraryItems = result.itineraryDays.flatMap((d: any) =>
+        d.items.map((it: any) => {
+          scheduledIds.add(it.id);
+          return { ...it, dayId: d.id, pinState: it.pinState ?? 'none', priority: it.priority ?? 'medium', status: 'scheduled' };
+        }));
+      const itineraryDays = result.itineraryDays.map((d: any, i: number) => {
+        const dt = d.date ? new Date(`${d.date}T00:00:00`) : null;
+        const valid = dt && !Number.isNaN(dt.getTime());
+        return {
+          id: d.id,
+          label: valid ? dt!.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase() : `DAY ${i + 1}`,
+          date: valid ? String(dt!.getDate()) : String(i + 1),
+          fullDateString: valid ? dt!.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) : `Day ${i + 1}`,
+          areaSummary: d.areaSummary,
+        };
+      });
+      const pocket = prev.pocket.map(col => ({ ...col, items: col.items.filter(p => !scheduledIds.has(p.id)) }));
+      return {
+        ...prev,
+        tripBrief: { ...prev.tripBrief, ...(result.brief ?? {}), id: prev.tripBrief.id },
+        itineraryDays,
+        itineraryItems,
+        selectedDayId: itineraryDays[0]?.id ?? prev.selectedDayId,
+        pocket,
+      };
+    });
+  };
+
+  const [viewType, setViewType] = useState<'day' | 'week' | 'month'>('day');
   const [focusMode, setFocusMode] = useState<boolean>(false);
   const [showComponentSheet, setShowComponentSheet] = useState<boolean>(false);
   const [messages, setMessages] = useState<CopilotMessage[]>(INITIAL_MESSAGES);
   const [isCopilotLoading, setIsCopilotLoading] = useState<boolean>(false);
+  // Staged copilot itinerary/pocket edits keyed by AI message id — reviewed + confirmed via the
+  // CopilotPanel tiered "Apply" card (#27) instead of auto-applying.
+  const [pendingChanges, setPendingChanges] = useState<Record<string, { base?: ItineraryItem[]; updatedItems?: ItineraryItem[]; updatedPocket?: any[]; deltas?: RevisionDelta[] }>>({});
+
+  // "Last revised" timestamp for the header — restamped whenever the revision log changes.
+  const [lastRevisedAt, setLastRevisedAt] = useState<number>(Date.now());
+  useEffect(() => { setLastRevisedAt(Date.now()); }, [appState.revisionDeltas]);
+
+  // Start over: reset the workspace to the seeded sample trip (destructive → confirm first).
+  const handleStartOver = () => {
+    if (typeof window !== 'undefined' && !window.confirm('Start over? This clears the current plan and reverts to the sample Kyoto trip.')) return;
+    setAppState({
+      tripBrief: INITIAL_TRIP_BRIEF,
+      itineraryDays: INITIAL_DAYS,
+      itineraryItems: INITIAL_ITINERARY_ITEMS,
+      pocket: INITIAL_POCKET,
+      bookings: INITIAL_BOOKINGS,
+      selectedDayId: 'day-3',
+      selectedItemId: undefined,
+      revisionDeltas: INITIAL_REVISION_DELTAS,
+      currentView: 'plan',
+    });
+    setMessages(INITIAL_MESSAGES);
+    setPendingChanges({});
+    setLastRevisedAt(Date.now());
+  };
 
   // Optimization Modal state hooks
   const [optimizingItem, setOptimizingItem] = useState<PlaceItem | null>(null);
@@ -200,6 +230,12 @@ function AppContent() {
   const [leftWidth, setLeftWidth] = useState<number>(340);
   const [rightWidth, setRightWidth] = useState<number>(360);
   const [middleHeight, setMiddleHeight] = useState<number>(300);
+  // The pocket shelf may shrink only to a usable floor at the page edge; dragging past
+  // that collapses it entirely, leaving a slim toggle as the way back.
+  const [pocketCollapsed, setPocketCollapsed] = useState<boolean>(false);
+  const centerColRef = useRef<HTMLDivElement>(null);
+  const POCKET_MIN_H = 140; // below this the shelf isn't usable — hide instead
+  const RESIZER_H = 12;
 
   // Resize handler for Left Sidebar (Itinerary)
   const handleLeftDrag = (e: React.MouseEvent) => {
@@ -268,9 +304,18 @@ function AppContent() {
     const maxMapHeight = maxMapHeightFor(e.currentTarget as HTMLElement);
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaY = moveEvent.clientY - startY;
-      const newHeight = Math.max(120, Math.min(maxMapHeight, startHeight + deltaY));
-      setMiddleHeight(newHeight);
+      const desired = startHeight + (moveEvent.clientY - startY);
+      // Clamp to the LIVE column height: the map may grow only until the pocket hits its
+      // usable floor at the page edge — it must never push the shelf below the viewport.
+      const colH = centerColRef.current?.getBoundingClientRect().height ?? 700;
+      const maxMap = colH - RESIZER_H - POCKET_MIN_H;
+      if (desired > maxMap + 48) {
+        // dragged well past the floor → hide the shelf, keep the toggle as the hint back
+        setPocketCollapsed(true);
+        return;
+      }
+      setPocketCollapsed(false);
+      setMiddleHeight(Math.max(120, Math.min(maxMap, desired)));
     };
 
     const handleMouseUp = () => {
@@ -286,12 +331,28 @@ function AppContent() {
 
   // Computed Lookups
   const currentDay = appState.itineraryDays.find(d => d.id === appState.selectedDayId) || appState.itineraryDays[0];
-  const activeDayItems = appState.itineraryItems.filter(item => item.dayId === appState.selectedDayId);
+  // Memoized so MapPanel/ItineraryPanel receive a stable array identity when the data is unchanged —
+  // prevents the map's bounds-fit/polyline effects from re-firing on unrelated App re-renders.
+  const activeDayItems = useMemo(
+    () => appState.itineraryItems.filter(item => item.dayId === appState.selectedDayId),
+    [appState.itineraryItems, appState.selectedDayId]
+  );
+  // Flattened pocket POIs for the map — memoized for the same stable-identity reason.
+  const pocketMapItems = useMemo(
+    () => appState.pocket.flatMap(col => col.items),
+    [appState.pocket]
+  );
+
+  // Hover is kept out of appState so a mousemove over the calendar/map doesn't re-render
+  // the whole trip state — only the two panels that read hoveredItemId update.
+  const [hoveredItemId, setHoveredItemId] = useState<string | undefined>(undefined);
 
   // Handlers
   const handleSelectItem = (id: string | undefined) => {
     setAppState(prev => ({ ...prev, selectedItemId: id }));
   };
+
+  const handleHoverItem = (id: string | undefined) => setHoveredItemId(id);
 
   const handleSelectDay = (id: string) => {
     setAppState(prev => ({ ...prev, selectedDayId: id }));
@@ -496,6 +557,80 @@ function AppContent() {
         itineraryItems: prev.itineraryItems.filter(item => item.id !== id),
         revisionDeltas: [newDelta, ...prev.revisionDeltas]
       };
+    });
+  };
+
+  // Mark a stop as missed — a planner can't auto-detect this (no GPS/check-ins), so it's a manual
+  // user action. The stop stays in place but muted, and surfaces a one-click make-up recovery.
+  const handleMarkMissed = (id: string) => {
+    const item = appState.itineraryItems.find(i => i.id === id);
+    if (!item) return;
+    setAppState(prev => {
+      const newDelta: RevisionDelta = {
+        id: 'delta-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9),
+        type: 'makeup',
+        itemTitle: item.title,
+        note: 'Marked as missed — ready to find a make-up slot.',
+      };
+      return {
+        ...prev,
+        itineraryItems: prev.itineraryItems.map(i =>
+          i.id === id ? { ...i, status: 'missed' as const, pinState: 'none' as const } : i
+        ),
+        revisionDeltas: [newDelta, ...prev.revisionDeltas],
+      };
+    });
+  };
+
+  // One-click make-up: reuse the single-insert optimizer across every LATER day, pick the best fit,
+  // move the stop there, and log a "make-up" revision delta (undoable via the revision summary).
+  const handleFindBestFit = (id: string) => {
+    const item = appState.itineraryItems.find(i => i.id === id);
+    if (!item) return;
+    const fromIdx = appState.itineraryDays.findIndex(d => d.id === item.dayId);
+    const laterDayIds = appState.itineraryDays.slice(fromIdx + 1).map(d => d.id);
+    const sayNoFit = (text: string) => setMessages(prev => [...prev, {
+      id: 'ai-makeup-' + Date.now(), sender: 'ai' as const, text, timestamp: 'Just now',
+    }]);
+    if (laterDayIds.length === 0) {
+      sayNoFit(`"${item.title}" is on the last day, so there's no later day to make it up. Drag it to an open slot, or extend the trip.`);
+      return;
+    }
+    const fit = findBestDayFit(item, appState.itineraryItems, laterDayIds);
+    if (!fit) {
+      sayNoFit(`I couldn't find a make-up slot for "${item.title}" on the remaining days.`);
+      return;
+    }
+    // Index proposed changes by the item they target (insert = the moved stop; shifts = that day's
+    // other stops). itemData holds the new dayId/startTime/endTime. NB: plain object, not Map() —
+    // `Map` is shadowed by the lucide-react Map icon imported in this file.
+    const changeByItemId: Record<string, ItineraryItem> = {};
+    for (const c of fit.result.proposedChanges) changeByItemId[c.itemId] = c.itemData;
+    const targetDay = appState.itineraryDays.find(d => d.id === fit.dayId);
+    setAppState(prev => {
+      const items = prev.itineraryItems.map(i => {
+        const data = changeByItemId[i.id];
+        if (!data) return i;
+        const isMoved = i.id === id;
+        return {
+          ...i,
+          dayId: data.dayId,
+          startTime: data.startTime,
+          endTime: data.endTime,
+          ...(isMoved ? { status: 'makeup' as const } : {}),
+        };
+      });
+      const movedScheduled = changeByItemId[id];
+      const newDelta: RevisionDelta = {
+        id: 'delta-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9),
+        type: 'makeup',
+        itemTitle: item.title,
+        to: `${targetDay?.label ?? 'later'} ${movedScheduled?.startTime ?? ''}`.trim(),
+        note: fit.forcesRemoval
+          ? `Made up on ${targetDay?.fullDateString ?? 'a later day'} (day was tight).`
+          : `Best fit found on ${targetDay?.fullDateString ?? 'a later day'} — +${fit.addedTransitMin}m transit.`,
+      };
+      return { ...prev, itineraryItems: items, selectedDayId: fit.dayId, revisionDeltas: [newDelta, ...prev.revisionDeltas] };
     });
   };
 
@@ -763,11 +898,37 @@ function AppContent() {
     };
 
     setMessages(prev => [...prev, freshUserMsg]);
+
+    // Quick command: "regenerate" / "re-plan" → re-plan from the Research Pocket (keepAll),
+    // keeping fixed bookings/pins in place. Handled client-side; no API round-trip. (#23)
+    if (/\b(regenerate|re-?plan|rebuild (the )?(plan|trip|itinerary))\b/i.test(text)) {
+      handleRegenerate();
+      setMessages(prev => [...prev, {
+        id: 'ai-regen-' + Date.now(),
+        sender: 'ai',
+        text: 'Re-planned your trip from the Research Pocket — booked and pinned stops stayed exactly where they were, everything else re-timed around them, and anything that no longer fit went back to your pocket.',
+        timestamp: 'Just now',
+      }]);
+      return;
+    }
+
+    // Free-tier per-session pacing: block BEFORE any network call once the session cap is reached
+    // (refresh resets it). UX pacing only — the per-IP proxy cap is the real cost wall. (#brief Task B)
+    if (!sessionMeter.canUse()) {
+      setMessages(prev => [...prev, {
+        id: 'ai-cap-' + Date.now(),
+        sender: 'ai',
+        text: `You've used your ${sessionMeter.cap} free Copilot actions for this session. Refresh the page to continue, or upgrade for unlimited assistance. Your itinerary, drag, pocket and revisions all keep working in the meantime.`,
+        timestamp: 'Just now',
+      }]);
+      return;
+    }
+
     setIsCopilotLoading(true);
 
     try {
       // Call server proxy first
-      const res = await fetch('/api/copilot', {
+      const res = await fetch(`${API_BASE}/api/copilot`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -777,6 +938,7 @@ function AppContent() {
       });
 
       if (res.ok) {
+        sessionMeter.record(); // count only a real server hit (not 429s, not client short-circuits)
         const payload = await res.json();
         const freshAIMsg: CopilotMessage = {
           id: 'ai-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9),
@@ -788,17 +950,38 @@ function AppContent() {
 
         setMessages(prev => [...prev, freshAIMsg]);
 
-        // Stage schedule changes for an explicit confirm in chat (no silent auto-apply).
-        if (payload.updatedItems || payload.updatedPocket || payload.deltas) {
+        // A pasted confirmation surfaces parsed bookings — commit them immediately as locked
+        // anchors via applyBookings (#17/#20). Cancellations unlock + flag a re-plan.
+        if (Array.isArray(payload.bookings) && payload.bookings.length) {
+          setAppState(prev => {
+            const r = applyBookings(
+              { bookings: prev.bookings, itineraryItems: prev.itineraryItems, days: prev.itineraryDays, tripStartDate: prev.tripBrief.startDate },
+              payload.bookings
+            );
+            return { ...prev, bookings: r.bookings, itineraryItems: r.itineraryItems, revisionDeltas: [...r.deltas, ...prev.revisionDeltas] };
+          });
+        }
+
+        // Itinerary/pocket edits are STAGED (not auto-applied) so the user can review them in the
+        // copilot's tiered "Apply changes / removal" card (#27) and confirm via onApplyChange.
+        if (payload.updatedItems || payload.updatedPocket || (payload.deltas && payload.deltas.length)) {
           setPendingChanges(prev => ({
             ...prev,
-            [freshAIMsg.id]: {
-              updatedItems: payload.updatedItems,
-              updatedPocket: payload.updatedPocket,
-              deltas: payload.deltas,
-            },
+            [freshAIMsg.id]: { base: appState.itineraryItems, updatedItems: payload.updatedItems, updatedPocket: payload.updatedPocket, deltas: payload.deltas },
           }));
         }
+      } else if (res.status === 429) {
+        // The proxy's per-IP cost wall tripped — distinct from the per-session pacing cap above.
+        const body = await res.json().catch(() => ({} as any));
+        const sec = Number(body?.retryAfterSec);
+        const waitMsg = Number.isFinite(sec) && sec > 0 ? ` Try again in about ${sec}s.` : ' Try again shortly.';
+        setMessages(prev => [...prev, {
+          id: 'ai-busy-' + Date.now(),
+          sender: 'ai',
+          text: `Copilot is handling a lot of requests right now.${waitMsg} Your itinerary and the rest of the workspace keep working.`,
+          timestamp: 'Just now',
+        }]);
+        return;
       } else {
         throw new Error('API server failed');
       }
@@ -826,6 +1009,70 @@ function AppContent() {
     } finally {
       setIsCopilotLoading(false);
     }
+  };
+
+  // Apply a STAGED copilot change set (#27 tiered apply): commit the proposed items/pocket/deltas,
+  // then clear it so the card collapses. (Applies the snapshot captured when the reply arrived.)
+  // 3-way merge a staged copilot proposal onto the LIVE board so applying a stale card never clobbers
+  // edits made after the reply. `base` = board the copilot diffed from; only the items it actually
+  // changed/added/removed are applied — anything the user touched in between is preserved.
+  const mergeProposedItinerary = (base: ItineraryItem[] | undefined, proposed: ItineraryItem[], current: ItineraryItem[]): ItineraryItem[] => {
+    if (!base) return proposed; // no base captured (legacy entry) → fall back to wholesale replace
+    const mapOf = (arr: ItineraryItem[]) => new Map(arr.filter(x => x.id).map(x => [x.id as string, x]));
+    const baseMap = mapOf(base), propMap = mapOf(proposed);
+    const removed = new Set([...baseMap.keys()].filter(k => !propMap.has(k)));   // copilot dropped these
+    const result = current.filter(it => !it.id || !removed.has(it.id));         // live board minus removals
+    for (const [k, p] of propMap) {
+      const b = baseMap.get(k);
+      if (b && JSON.stringify(b) === JSON.stringify(p)) continue;               // copilot didn't touch it → keep live version
+      const idx = result.findIndex(it => it.id === k);
+      if (idx >= 0) result[idx] = p; else result.push(p);                       // apply copilot's edit / add
+    }
+    return result;
+  };
+
+  const handleApplyChange = (msgId: string) => {
+    const pc = pendingChanges[msgId];
+    if (!pc) return;
+    setAppState(prev => {
+      const next: AppState = { ...prev };
+      if (pc.updatedItems) next.itineraryItems = mergeProposedItinerary(pc.base, pc.updatedItems as ItineraryItem[], prev.itineraryItems);
+      if (pc.updatedPocket) next.pocket = pc.updatedPocket as any;
+      if (pc.deltas && pc.deltas.length) next.revisionDeltas = [...pc.deltas, ...prev.revisionDeltas];
+      return next;
+    });
+    setPendingChanges(prev => { const n = { ...prev }; delete n[msgId]; return n; });
+  };
+
+  // Regenerate the trip from the current board + fresh Research Pocket, keeping locked/pinned items
+  // byte-for-byte (regenerateFromPocket → keepAll); overflow returns to the pocket. (#23)
+  const handleRegenerate = () => {
+    setAppState(prev => {
+      const res = regenerateFromPocket({
+        board: prev.itineraryItems as any,
+        pocket: prev.pocket,
+        dayIds: prev.itineraryDays.map(d => d.id),
+        brief: { style: prev.tripBrief.style },
+      });
+      const scheduled = res.itineraryItems as unknown as ItineraryItem[];
+      const scheduledIds = new Set(scheduled.map(i => i.id));
+      // Overflow → back into the pocket columns by category; never wipe un-scheduled saved items.
+      const nextPocket = prev.pocket.map(col => {
+        const overflowForCol = res.pocket.filter((p: any) =>
+          (col.id === 'food-drink' ? p.category === 'food' : p.category !== 'food') && !scheduledIds.has(p.id));
+        const kept = col.items.filter(p => !scheduledIds.has(p.id));
+        const added = overflowForCol.filter((p: any) => !kept.some(e => e.id === p.id));
+        return { ...col, items: [...kept, ...added] as PlaceItem[] };
+      });
+      const fixed = scheduled.filter(i => (i as any).pinState === 'hard' || (i as any).reservationBound).length;
+      const delta: RevisionDelta = {
+        id: 'delta-regen-' + Date.now(),
+        type: 'move',
+        itemTitle: `Regenerated ${prev.itineraryDays.length}-day plan`,
+        note: `Re-planned around ${fixed} fixed item(s); ${res.pocket.length} returned to pocket.`,
+      };
+      return { ...prev, itineraryItems: scheduled, pocket: nextPocket, revisionDeltas: [delta, ...prev.revisionDeltas] };
+    });
   };
 
   const handleApplySug = (msgId: string) => {
@@ -947,6 +1194,29 @@ function AppContent() {
     handleSendMessage(command);
   };
 
+  // Switch the active trip to an authored dataset (Kyoto, Iceland, …) and open the planner.
+  // Pocket is rehydrated per-trip from storage, falling back to the trip's seed pocket.
+  const handleLoadTrip = (tripId: string) => {
+    const t = getTrip(tripId);
+    if (!t) {
+      setAppState(prev => ({ ...prev, currentView: 'plan' }));
+      return;
+    }
+    setAppState(prev => ({
+      ...prev,
+      tripBrief: t.tripBrief,
+      itineraryDays: t.itineraryDays,
+      itineraryItems: t.itineraryItems,
+      pocket: loadJSON(pocketKey(t.tripBrief.id), t.pocket),
+      bookings: t.bookings,
+      revisionDeltas: t.revisionDeltas,
+      selectedItemId: undefined,
+      selectedDayId: t.itineraryDays[0]?.id ?? prev.selectedDayId,
+      currentView: 'plan',
+    }));
+    setMessages(t.messages);
+  };
+
   return (
     <div className="w-full h-screen font-sans flex flex-col bg-background selection:bg-primary/20 selection:text-primary">
         {/* Upper Navigation Rail */}
@@ -954,8 +1224,14 @@ function AppContent() {
           onToggleViewSheet={() => setShowComponentSheet(prev => !prev)}
           showComponentSheet={showComponentSheet}
           currentView={appState.currentView}
-          onViewChange={handleViewChange}
-          currentTrip={appState.tripBrief}
+          onViewChange={(view) => setAppState(prev => ({ ...prev, currentView: view }))}
+          pool={placeItemsToPool(appState.pocket, { scheduledIds: appState.itineraryItems.map(i => i.id) })}
+          onGenerated={handleGenerated}
+          onLoadTrip={handleLoadTrip}
+          tripBrief={appState.tripBrief}
+          onRegenerate={handleRegenerate}
+          onStartOver={handleStartOver}
+          lastRevisedAt={lastRevisedAt}
         />
 
         {/* Phone-only compact workspace switch bar (tablet uses a side-by-side layout instead) */}
@@ -1003,67 +1279,30 @@ function AppContent() {
             <div className="absolute inset-0 z-20 bg-background p-2 animate-fadeIn">
               <TripsPage
                 currentTrip={appState.tripBrief}
-                stopCount={appState.itineraryItems.length}
-                onViewChange={handleViewChange}
-                onOpenTrip={handleOpenTrip}
+                onViewChange={(view) => setAppState(prev => ({ ...prev, currentView: view }))}
                 onShare={handleOpenShare}
+                onLoadTrip={handleLoadTrip}
               />
             </div>
           ) : appState.currentView === 'explore' ? (
             <div className="absolute inset-0 z-20 bg-background p-2 animate-fadeIn">
               <ExplorePage
-                onViewChange={handleViewChange}
+                onViewChange={(view) => setAppState(prev => ({ ...prev, currentView: view }))}
               />
             </div>
-          ) : consumptionMode ? (
-            <>
-              {/* Trip-mode indicator + edit affordance (desktop trip view) */}
-              {isLargeScreen && tripMode && (
-                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5 bg-white border border-border-subtle rounded-full shadow-md px-3.5 py-1.5">
-                  <span className="text-[11px] font-bold text-on-surface flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    Trip view · read-only
-                  </span>
-                  <button
-                    onClick={() => handleViewChange('plan')}
-                    className="text-[11px] font-bold text-primary hover:bg-primary-soft px-2 py-0.5 rounded-full transition-colors cursor-pointer"
-                  >
-                    Edit plan
-                  </button>
-                </div>
-              )}
-
-              {/* "On the road" consumption: itinerary + map side-by-side, read-only */}
-              <div className="w-[45%] min-w-[300px] h-full overflow-hidden shrink-0">
-                <ItineraryPanel
-                  currentDay={currentDay}
-                  days={appState.itineraryDays}
-                  items={appState.itineraryItems}
-                  selectedItemId={appState.selectedItemId}
-                  viewType={viewType}
-                  focusMode={focusMode}
-                  readOnly
-                  onSelectItem={handleSelectItem}
-                  onSelectDay={handleSelectDay}
-                  onTogglePin={handleTogglePin}
-                  onToggleLock={handleToggleLock}
-                  onAddItem={handleAddItem}
-                  onRemoveItem={handleRemoveItem}
-                  onSetViewType={setViewType}
-                  onUpdateItemTime={handleUpdateItemTime}
-                  onPromotePocketItemToTime={handlePromotePocketItemToTime}
-                  onShare={() => handleOpenShare()}
-                />
-              </div>
-              <div className="flex-1 h-full overflow-hidden pl-2">
-                <MapPanel
-                  items={activeDayItems}
-                  selectedItemId={appState.selectedItemId}
-                  onSelectItem={handleSelectItem}
-                  pocketItems={appState.pocket.flatMap(col => col.items)}
-                />
-              </div>
-            </>
+          ) : appState.currentView === 'pocket' ? (
+            <div className="absolute inset-0 z-20 bg-background p-2 animate-fadeIn">
+              <PocketBoardPage
+                pocket={appState.pocket}
+                selectedItemId={appState.selectedItemId}
+                onSelectItem={handleSelectItem}
+                onAddPocketItem={handleAddPocketItem}
+                onPromoteItem={handlePromotePocketItem}
+                onClearAll={handleClearAllPocket}
+                onRemovePocketItem={handleRemovePocketItem}
+                onAskCopilot={() => setAppState(prev => ({ ...prev, currentView: 'plan' }))}
+              />
+            </div>
           ) : (
             <>
               {/* Toggleable sidebar depending on layout selection */}
@@ -1079,11 +1318,13 @@ function AppContent() {
                 days={appState.itineraryDays}
                 items={appState.itineraryItems}
                 selectedItemId={appState.selectedItemId}
+                hoveredItemId={hoveredItemId}
                 viewType={viewType}
                 focusMode={focusMode}
                 readOnly={readOnly}
                 onToggleReadMode={isLargeScreen ? handleToggleReadMode : undefined}
                 onSelectItem={handleSelectItem}
+                onHoverItem={handleHoverItem}
                 onSelectDay={handleSelectDay}
                 onTogglePin={handleTogglePin}
                 onToggleLock={handleToggleLock}
@@ -1092,6 +1333,8 @@ function AppContent() {
                 onSetViewType={setViewType}
                 onUpdateItemTime={handleUpdateItemTime}
                 onPromotePocketItemToTime={handlePromotePocketItemToTime}
+                onMarkMissed={handleMarkMissed}
+                onFindBestFit={handleFindBestFit}
                 onShare={() => handleOpenShare()}
               />
             </div>
@@ -1106,11 +1349,13 @@ function AppContent() {
                 days={appState.itineraryDays}
                 items={appState.itineraryItems}
                 selectedItemId={appState.selectedItemId}
+                hoveredItemId={hoveredItemId}
                 viewType={viewType}
                 focusMode={focusMode}
                 readOnly={readOnly}
                 onToggleReadMode={isLargeScreen ? handleToggleReadMode : undefined}
                 onSelectItem={handleSelectItem}
+                onHoverItem={handleHoverItem}
                 onSelectDay={handleSelectDay}
                 onTogglePin={handleTogglePin}
                 onToggleLock={handleToggleLock}
@@ -1119,6 +1364,8 @@ function AppContent() {
                 onSetViewType={setViewType}
                 onUpdateItemTime={handleUpdateItemTime}
                 onPromotePocketItemToTime={handlePromotePocketItemToTime}
+                onMarkMissed={handleMarkMissed}
+                onFindBestFit={handleFindBestFit}
                 onShare={() => handleOpenShare()}
               />
             </div>
@@ -1138,7 +1385,8 @@ function AppContent() {
 
           {/* Center Canvas Pane (Toggles Focus Mode / Map or Normal Grid) */}
           {viewType === 'day' && (
-            <div 
+            <div
+              ref={centerColRef}
               className={`flex-1 flex flex-col overflow-hidden h-full ${
                 isLargeScreen ? 'flex' : activeMobileTab === 'map' ? 'flex' : 'hidden'
               }`}
@@ -1150,65 +1398,56 @@ function AppContent() {
                 />
               ) : (
                 <>
-                  {/* Map — fills the center when the Bucket list is folded */}
+                  {/* Upper Map Panel with focus/minimize button details */}
                   <div
-                    style={{ height: (isLargeScreen && pocketCollapsed) ? undefined : `${middleHeight}px` }}
-                    className={`relative group overflow-hidden flex flex-col ${(isLargeScreen && pocketCollapsed) ? 'flex-1' : 'shrink-0'}`}
+                    style={pocketCollapsed ? undefined : { height: `${middleHeight}px` }}
+                    className={`relative group overflow-hidden flex flex-col ${pocketCollapsed ? 'flex-1' : 'shrink-0'}`}
                   >
                     <MapPanel
                       items={activeDayItems}
                       selectedItemId={appState.selectedItemId}
+                      hoveredItemId={hoveredItemId}
                       onSelectItem={handleSelectItem}
-                      pocketItems={appState.pocket.flatMap(col => col.items)}
+                      onHoverItem={handleHoverItem}
+                      pocketItems={pocketMapItems}
                     />
                   </div>
 
-                  {isLargeScreen && pocketCollapsed ? (
-                    /* Folded Bucket list — handle to re-expand */
+                  {/* Horizontal Resizer Drag Handle */}
+                  <div
+                    onMouseDown={handleMiddleDrag}
+                    onDoubleClick={() => { setMiddleHeight(350); setPocketCollapsed(false); }}
+                    className="h-3 hover:h-4 flex items-center justify-center cursor-row-resize group w-full select-none shrink-0 transition-all"
+                    title="Drag to resize map (Double click to reset)"
+                  >
+                    <div className="h-1 w-12 rounded-full bg-slate-200 group-hover:bg-primary/50 group-active:bg-primary transition-all pointer-events-none" />
+                  </div>
+
+                  {/* Lower Research Pocket Shelf — collapses to a slim toggle when squeezed past its floor */}
+                  {pocketCollapsed ? (
                     <button
                       onClick={() => setPocketCollapsed(false)}
-                      className="shrink-0 mt-1 h-7 flex items-center justify-center gap-1.5 rounded-lg border border-border-subtle bg-white hover:bg-surface-container-low text-[11px] font-bold text-secondary hover:text-primary transition-colors cursor-pointer"
-                      title="Show bucket list"
+                      className="shrink-0 flex items-center justify-center gap-2 py-1.5 bg-white border border-border-subtle rounded-2xl text-xs font-bold text-secondary hover:text-primary hover:border-primary/40 transition-colors cursor-pointer"
+                      title="Show the Bucket List"
                     >
+                      <ListChecks className="w-3.5 h-3.5 text-primary" />
+                      Bucket List · {pocketMapItems.length}
                       <ChevronUp className="w-3.5 h-3.5" />
-                      Bucket list
-                      <span className="text-[9px] text-tertiary font-bold">{appState.pocket.reduce((n, c) => n + c.items.length, 0)}</span>
                     </button>
                   ) : (
-                    <>
-                      {/* Horizontal Resizer + fold control */}
-                      <div className="flex items-center w-full shrink-0">
-                        <div
-                          onMouseDown={handleMiddleDrag}
-                          onDoubleClick={(e) => setMiddleHeight(Math.min(350, maxMapHeightFor(e.currentTarget as HTMLElement)))}
-                          className="h-3 hover:h-4 flex-1 flex items-center justify-center cursor-row-resize group select-none transition-all"
-                          title="Drag to resize map (Double click to reset)"
-                        >
-                          <div className="h-1 w-12 rounded-full bg-slate-200 group-hover:bg-primary/50 group-active:bg-primary transition-all pointer-events-none" />
-                        </div>
-                        {isLargeScreen && (
-                          <button
-                            onClick={() => setPocketCollapsed(true)}
-                            className="p-1 text-slate-300 hover:text-primary hover:bg-surface-container-low rounded transition-colors cursor-pointer shrink-0"
-                            title="Hide bucket list"
-                          >
-                            <ChevronDown className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Lower Research Pocket Shelf */}
-                      <PocketPanel
-                        pocket={appState.pocket}
-                        onAddPocketItem={handleAddPocketItem}
-                        onPromoteItem={handlePromotePocketItem}
-                        onClearAll={handleClearAllPocket}
-                        onRemovePocketItem={handleRemovePocketItem}
-                        selectedItemId={appState.selectedItemId}
-                        onSelectItem={handleSelectItem}
-                        onDropCalendarItem={handleDropCalendarItemToPocket}
-                      />
-                    </>
+                    <PocketPanel
+                      pocket={appState.pocket}
+                      onAddPocketItem={handleAddPocketItem}
+                      onPromoteItem={handlePromotePocketItem}
+                      onClearAll={handleClearAllPocket}
+                      onRemovePocketItem={handleRemovePocketItem}
+                      selectedItemId={appState.selectedItemId}
+                      onSelectItem={handleSelectItem}
+                      onDropCalendarItem={handleDropCalendarItemToPocket}
+                      focusedDayItems={activeDayItems}
+                      focusedDayArea={currentDay?.areaSummary}
+                      focusedDayLabel={currentDay ? `${currentDay.label} ${currentDay.date}` : undefined}
+                    />
                   )}
                 </>
               )}
@@ -1277,6 +1516,25 @@ function AppContent() {
               />
             </div>
           )}
+
+          {/* Right Travel Copilot Sidebar Panel */}
+          <div 
+            style={{ width: isLargeScreen ? `${rightWidth}px` : '100%' }} 
+            className={`shrink-0 h-full flex flex-col overflow-hidden ${
+              isLargeScreen ? 'lg:flex' : activeMobileTab === 'copilot' ? 'flex' : 'hidden'
+            }`}
+          >
+            <CopilotPanel
+              messages={messages}
+              deltas={appState.revisionDeltas}
+              onSendMessage={handleSendMessage}
+              onApplyPreset={handleApplyPreset}
+              onRevertDelta={handleRevertDelta}
+              onApplySug={handleApplySug}
+              pendingChanges={pendingChanges}
+              onApplyChange={handleApplyChange}
+            />
+          </div>
           </>
           )}
         </main>
