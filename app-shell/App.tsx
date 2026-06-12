@@ -163,7 +163,7 @@ function AppContent() {
   };
 
   // Responsive adaptive screen states
-  const [isLargeScreen, setIsLargeScreen] = useState<boolean>(true);
+  const [isLargeScreen, setIsLargeScreen] = useState<boolean>(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
   const [activeMobileTab, setActiveMobileTab] = useState<'itinerary' | 'map' | 'copilot'>('itinerary');
 
   useEffect(() => {
@@ -1437,6 +1437,7 @@ function AppContent() {
               onApplySug={handleApplySug}
               pendingChanges={pendingChanges}
               onApplyChange={handleApplyChange}
+              isLoading={isCopilotLoading}
             />
           </div>
           </>

@@ -27,6 +27,7 @@ interface CopilotPanelProps {
   onApplySug: (msgId: string) => void;
   pendingChanges?: Record<string, PendingChange>;
   onApplyChange?: (msgId: string) => void;
+  isLoading?: boolean;
 }
 
 // ── Copilot colour strategy ───────────────────────────────────────────────
@@ -95,7 +96,8 @@ export default function CopilotPanel({
   onRevertDelta,
   onApplySug,
   pendingChanges,
-  onApplyChange
+  onApplyChange,
+  isLoading,
 }: CopilotPanelProps) {
   const [inputText, setInputText] = useState('');
   const [historyHeight, setHistoryHeight] = useState(140);
@@ -540,9 +542,11 @@ export default function CopilotPanel({
             </button>
             <button
               onClick={handleSend}
-              className="p-1.5 bg-primary text-white rounded-lg cursor-pointer hover:bg-accent-primary-hover transition-colors"
+              title={isLoading ? '查詢中…' : inputText.trim() ? '傳送' : '請輸入問題'}
+              disabled={isLoading || !inputText.trim()}
+              className={`p-1.5 rounded-lg transition-colors ${isLoading || !inputText.trim() ? 'bg-secondary/20 text-secondary cursor-not-allowed' : 'bg-primary text-white cursor-pointer hover:bg-accent-primary-hover'}`}
             >
-              <Send className="w-3.5 h-3.5" />
+              {isLoading ? <Coffee className="w-3.5 h-3.5 animate-pulse" /> : <Send className="w-3.5 h-3.5" />}
             </button>
           </div>
         </div>
