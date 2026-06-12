@@ -12,8 +12,15 @@
  */
 import type { Request, Response, NextFunction } from 'express';
 
-/** Standard security headers. CSP is production-only (Vite dev needs inline/eval for HMR) and scoped
- *  to the Google Maps / Places / Generative-Language + Fonts origins the app actually calls. */
+/** Standard security headers. CSP is production-only (Vite dev needs inline/eval for HMR). Each
+ *  directive has a Firebase-app baseline (Firebase SDK over *.googleapis.com / *.firebaseio.com,
+ *  Google Fonts, https: tiles/images) that BOTH apps share, plus an optional per-app extension via
+ *  env (CSP_SCRIPT_SRC / CSP_CONNECT_SRC / …) — e.g. Wayfold adds Google Maps origins. This keeps
+ *  server-security.ts byte-identical across apps; only the env differs. */
+function directive(name: string, base: string, envKey: string): string {
+  const extra = (process.env[envKey] || '').trim();
+  return extra ? `${name} ${base} ${extra}` : `${name} ${base}`;
+}
 export function securityHeaders(req: Request, res: Response, next: NextFunction): void {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -22,11 +29,11 @@ export function securityHeaders(req: Request, res: Response, next: NextFunction)
   if (process.env.NODE_ENV === 'production') {
     res.setHeader('Content-Security-Policy', [
       "default-src 'self'",
-      "script-src 'self' https://maps.googleapis.com",
-      "connect-src 'self' https://maps.googleapis.com https://places.googleapis.com https://generativelanguage.googleapis.com",
-      "img-src 'self' data: https:",
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "font-src 'self' https://fonts.gstatic.com",
+      directive('script-src', "'self'", 'CSP_SCRIPT_SRC'),
+      directive('connect-src', "'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com", 'CSP_CONNECT_SRC'),
+      directive('img-src', "'self' data: blob: https:", 'CSP_IMG_SRC'),
+      directive('style-src', "'self' 'unsafe-inline' https://fonts.googleapis.com", 'CSP_STYLE_SRC'),
+      directive('font-src', "'self' https://fonts.gstatic.com", 'CSP_FONT_SRC'),
       "frame-ancestors 'none'",
     ].join('; '));
   }
