@@ -11,6 +11,7 @@
  * apply, so the local demo is unchanged. Set API_AUTH_TOKEN / CORS_ALLOWED_ORIGINS to lock down.
  */
 import type { Request, Response, NextFunction } from 'express';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 /** Standard security headers. CSP is production-only (Vite dev needs inline/eval for HMR). Each
  *  directive has a Firebase-app baseline (Firebase SDK over *.googleapis.com / *.firebaseio.com,
@@ -59,6 +60,7 @@ export function corsAllowlist(req: Request, res: Response, next: NextFunction): 
 }
 
 /** Fixed-window in-memory rate limiter, keyed by client IP. Returns 429 over the cap. */
+const RATE_LIMIT_MAX_KEYS = 5000; // hard cap on tracked IPs — bounds memory under a many-IP flood
 export function rateLimit({ windowMs, max }: { windowMs: number; max: number }) {
   const hits = new Map<string, { count: number; resetAt: number }>();
   return (req: Request, res: Response, next: NextFunction): void => {
@@ -78,7 +80,16 @@ export function rateLimit({ windowMs, max }: { windowMs: number; max: number }) 
       res.status(429).json({ error: 'rate_limited', scope: 'ip', retryAfterSec, message: 'Too many requests — please slow down.' });
       return;
     }
-    if (hits.size > 5000) for (const [k, v] of hits) if (now > v.resetAt) hits.delete(k); // opportunistic GC
+    // Bound memory under a many-distinct-IP flood: once over the hard cap, sweep expired entries;
+    // if STILL over (all live), FIFO-evict the oldest until at the cap. Without this, a DDoS from
+    // many IPs grows the map unbounded (expired-only GC never shrinks it during the attack) → OOM.
+    if (hits.size > RATE_LIMIT_MAX_KEYS) {
+      for (const [k, v] of hits) if (now > v.resetAt) hits.delete(k);
+      if (hits.size > RATE_LIMIT_MAX_KEYS) {
+        let overflow = hits.size - RATE_LIMIT_MAX_KEYS;
+        for (const k of hits.keys()) { if (overflow-- <= 0) break; hits.delete(k); }
+      }
+    }
     next();
   };
 }
@@ -96,6 +107,12 @@ export function requireApiToken(req: Request, res: Response, next: NextFunction)
     next(); return;
   }
   const got = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '') || String(req.headers['x-api-token'] || '');
-  if (got && got === token) { next(); return; }
+  // Constant-time compare: SHA-256 both first so the buffers are always equal length (timingSafeEqual
+  // throws on length mismatch, which itself would leak length) and the compare can't short-circuit.
+  if (got) {
+    const a = createHash('sha256').update(got).digest();
+    const b = createHash('sha256').update(token).digest();
+    if (timingSafeEqual(a, b)) { next(); return; }
+  }
   res.status(401).json({ error: 'Unauthorized.' });
 }

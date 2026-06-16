@@ -10,30 +10,89 @@
 import { extractCandidates } from './modules/ingestion/extractCandidates';
 import { dispatchIngestion, toSuggestion } from './modules/ingestion/dispatchIngestion';
 import { enqueue, listPending, ack } from './modules/ingestion/captureQueue';
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import type { BackendConfig } from './server-core';
 
 // ── Guarded page fetch for pasted links ───────────────────────────────────────────────────────
-// A bare URL carries no extractable text, so previously it fell through to the canned demo
-// fallback ("3 signature places"). Fetch the page itself (with SSRF guards) and run the SAME
-// deterministic ingestion core over its real content. Guards: http(s) only, public hosts only
-// (no localhost / private / link-local ranges), 6s timeout, HTML/plain only, capped size.
-const PRIVATE_HOST = /^(localhost$|0\.|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)|\.local$|^\[/i;
+// A bare URL carries no extractable text, so fetch the page itself (with SSRF guards) and run the
+// SAME deterministic ingestion core over its real content. Guards: http(s) only; the RESOLVED IP
+// must be public (checked against private/reserved IPv4+IPv6 ranges — defeats private-host SSRF and
+// the obvious DNS/redirect bypasses); redirects followed MANUALLY (≤3), re-validating the host at
+// every hop; 6s timeout; HTML/plain only; capped size.
+//
+// Residual: Node re-resolves DNS on the actual fetch(), so a sub-second rebind between the check and
+// the connect is a theoretical TOCTOU window. Fully closing it means connecting to the validated IP
+// (a custom undici dispatcher) — a follow-up; undici isn't a dependency here.
+
+/** True for loopback / private / link-local / CGNAT / reserved IPs (IPv4 + IPv6, incl. IPv4-mapped). */
+function isPrivateIp(ip: string): boolean {
+  const v = ip.toLowerCase();
+  const mapped = v.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/); // IPv4-mapped IPv6
+  if (mapped) return isPrivateIp(mapped[1]);
+  if (v.includes(':')) {
+    if (v === '::1' || v === '::') return true;       // loopback / unspecified
+    if (/^f[cd][0-9a-f]{2}:/.test(v)) return true;     // ULA fc00::/7
+    if (/^fe[89ab][0-9a-f]:/.test(v)) return true;     // link-local fe80::/10
+    return false;
+  }
+  const o = v.split('.').map(Number);
+  if (o.length !== 4 || o.some(n => Number.isNaN(n) || n < 0 || n > 255)) return true; // malformed → unsafe
+  const [a, b] = o;
+  return a === 0 || a === 127 || a === 10 ||
+    (a === 169 && b === 254) ||              // link-local
+    (a === 172 && b >= 16 && b <= 31) ||     // RFC1918
+    (a === 192 && b === 168) ||              // RFC1918
+    (a === 100 && b >= 64 && b <= 127) ||    // CGNAT 100.64/10
+    a >= 224;                                // multicast / reserved
+}
+
+/** Resolve the host and require EVERY resolved address to be public. Literal IPs are checked directly. */
+async function hostIsPublic(hostname: string): Promise<boolean> {
+  if (isIP(hostname)) return !isPrivateIp(hostname);
+  let addrs: { address: string }[];
+  try { addrs = await lookup(hostname, { all: true }); } catch { return false; }
+  return addrs.length > 0 && addrs.every(a => !isPrivateIp(a.address));
+}
+
+/** Bounded, backtracking-safe schema.org JSON-LD extraction. Attribute spans are length-capped
+ *  ({0,200}) and each block size-capped so a hostile page can't drive pathological scanning.
+ *  MIRRORED in extension/lib/harvest.ts (extractJsonLdFromHtml) — keep the pattern identical. */
+function extractJsonLd(html: string): any[] {
+  const out: any[] = [];
+  const re = /<script\b[^>]{0,200}type=["']application\/ld\+json["'][^>]{0,200}>([\s\S]{0,200000}?)<\/script>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    try { const p = JSON.parse(m[1].trim()); Array.isArray(p) ? out.push(...p) : out.push(p); } catch { /* skip bad blocks */ }
+  }
+  return out;
+}
+
 async function fetchPageForExtraction(rawUrl: string): Promise<{ text: string; jsonld: any[] } | null> {
-  let u: URL;
-  try { u = new URL(rawUrl); } catch { return null; }
-  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
-  if (PRIVATE_HOST.test(u.hostname)) return null;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 6000);
   try {
-    const r = await fetch(u.href, { signal: ctrl.signal, redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WayfoldIngest/0.1)', Accept: 'text/html,text/plain' } });
+    let target = rawUrl;
+    let r: Awaited<ReturnType<typeof fetch>> | null = null;
+    for (let hop = 0; hop <= 3; hop++) {              // initial fetch + up to 3 redirects
+      let u: URL;
+      try { u = new URL(target); } catch { return null; }
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+      if (!(await hostIsPublic(u.hostname))) return null;   // SSRF check re-run at EVERY hop
+      const resp = await fetch(u.href, { signal: ctrl.signal, redirect: 'manual', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WayfoldIngest/0.1)', Accept: 'text/html,text/plain' } });
+      if (resp.status >= 300 && resp.status < 400) {
+        const loc = resp.headers.get('location');
+        if (!loc) return null;
+        target = new URL(loc, u.href).href;            // resolve relative Location against current URL
+        continue;
+      }
+      r = resp; break;
+    }
+    if (!r) return null;                               // exceeded redirect budget
     const ct = String(r.headers.get('content-type') || '');
     if (!r.ok || !/text\/(html|plain)/i.test(ct)) return null;
     const html = (await r.text()).slice(0, 600_000);
-    const jsonld: any[] = [];
-    for (const m of html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
-      try { const p = JSON.parse(m[1]); Array.isArray(p) ? jsonld.push(...p) : jsonld.push(p); } catch { /* skip bad blocks */ }
-    }
+    const jsonld = extractJsonLd(html);
     const text = html
       .replace(/<script[\s\S]*?<\/script>/gi, ' ')
       .replace(/<style[\s\S]*?<\/style>/gi, ' ')

@@ -56,6 +56,12 @@ export function createApp(config: BackendConfig): Express {
   const general = config.rateLimits?.generalPerMin ?? 90;
   const ai = config.rateLimits?.aiPerMin ?? 20;
 
+  // Trust ONE proxy hop. On Functions Gen2 (Cloud Run behind Google's HTTPS LB) the socket peer is the
+  // LB, so without this req.ip is the LB's address and the rate limiter would key every client to one
+  // bucket (collective throttling). `1` trusts only the nearest proxy (the LB), reading the client IP
+  // from the last X-Forwarded-For hop — not attacker-spoofable upstream entries.
+  app.set('trust proxy', 1);
+
   app.use(express.json({ limit: '256kb' }));            // bound request bodies
   app.use(securityHeaders);                             // nosniff / frame-deny / referrer / (prod) CSP
   app.use('/api', corsAllowlist);                       // cross-origin only for CORS_ALLOWED_ORIGINS
