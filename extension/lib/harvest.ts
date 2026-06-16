@@ -17,10 +17,13 @@ export interface HarvestInput {
   selection?: string;   // user-selected text
 }
 
-/** Pull schema.org JSON-LD blocks out of raw HTML (mirror of the DOM `script[type=ld+json]` read). */
+/** Pull schema.org JSON-LD blocks out of raw HTML (mirror of the DOM `script[type=ld+json]` read).
+ *  Bounded, backtracking-safe pattern: attribute spans are length-capped ({0,200}) and each block
+ *  size-capped so a hostile page can't drive pathological scanning. This regex is IDENTICAL to the
+ *  backend's extractJsonLd (server-domain.ts) — keep the two in lockstep (no forked rules). */
 export function extractJsonLdFromHtml(html: string): unknown[] {
   const out: unknown[] = [];
-  const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  const re = /<script\b[^>]{0,200}type=["']application\/ld\+json["'][^>]{0,200}>([\s\S]{0,200000}?)<\/script>/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(html))) {
     try {
