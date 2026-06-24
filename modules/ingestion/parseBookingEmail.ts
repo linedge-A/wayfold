@@ -60,9 +60,12 @@ const TYPE_HINTS: { re: RegExp; type: BookingType; cat: BookingRecord['category'
 ];
 
 const BOOKING_SIGNALS = /\b(confirm(?:ed|ation)?|booking|reservation|itinerary|e-?ticket|pnr|reference|locator|check-?in|boarding)\b/i;
+// The captured code must contain at least one digit (lookahead) — without it the pattern grabs the
+// first word after "Confirmation:" (e.g. the hotel name "Hotel") instead of the real code. Hyphens
+// are allowed inside so codes like "HG-558211" survive.
 const LOCATOR_PATTERNS = [
-  /\b(?:confirmation(?:\s+(?:code|number|#))?|booking\s+(?:ref(?:erence)?|number|id)|reservation\s+(?:code|number)|pnr|record\s+locator|locator|reference)\s*[:#]?\s*([A-Z0-9]{5,10})\b/i,
-  /\b([A-Z0-9]{6})\b(?=.*\b(?:pnr|locator|confirmation)\b)/i,
+  /\b(?:confirmation(?:\s+(?:code|number|#))?|booking\s+(?:ref(?:erence)?|number|id)|reservation\s+(?:code|number)|pnr|record\s+locator|locator|reference)\s*[:#]?\s*(?=[A-Z0-9-]*\d)([A-Z0-9][A-Z0-9-]{3,13}[A-Z0-9])\b/i,
+  /\b(?=[A-Z0-9]*\d)([A-Z0-9]{6})\b(?=.*\b(?:pnr|locator|confirmation)\b)/i,
 ];
 const FLIGHT_NO = /\b([A-Z]{2}\s?\d{2,4})\b/;
 const AIRPORT = /\b([A-Z]{3})\b/g;
