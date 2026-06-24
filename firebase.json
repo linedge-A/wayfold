@@ -1,5 +1,5 @@
 {
-  "//": "Unified backend-core deploy (matches FirstStep): ALL on Firebase, one `firebase deploy`. Hosting serves the built SPA and rewrites /api/** to the Gemini-proxy Function (backend-core). Functions Gen2, minInstances:0 (scale-to-zero, $0 idle). Firestore/Storage rules land with the co-planning client layer (anon auth + workspaces) — not in this PR. See docs/backend-core.md.",
+  "//": "Unified backend-core deploy (matches FirstStep): ALL on Firebase, one `firebase deploy`. Hosting serves the built SPA and rewrites /api/** to the Gemini-proxy Function (backend-core). Functions Gen2, minInstances:0 (scale-to-zero, $0 idle). Firestore/Storage rules = the co-planning layer (anon auth + workspaces, docs/collab-model.md) — ship dark behind firebaseEnabled until VITE_FIREBASE_* is set. See docs/backend-core.md.",
   "hosting": {
     "public": "dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
@@ -13,9 +13,12 @@
     "runtime": "nodejs22",
     "predeploy": ["npm --prefix \"$RESOURCE_DIR\" install", "npm --prefix \"$RESOURCE_DIR\" run build"]
   },
+  "firestore": { "rules": "firestore.rules" },
+  "storage": { "rules": "storage.rules" },
   "emulators": {
     "auth": { "port": 9099 },
     "firestore": { "port": 8080 },
+    "storage": { "port": 9199 },
     "functions": { "port": 5001 },
     "hosting": { "port": 5000 },
     "ui": { "enabled": true }

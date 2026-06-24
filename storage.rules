@@ -1,0 +1,10 @@
+rules_version = '2';
+// Wayfold Storage rules. No user uploads yet (trip imagery is remote URLs); default deny until the
+// co-planning layer needs per-workspace media. Kept minimal + explicit so the bucket isn't open.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
