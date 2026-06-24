@@ -229,12 +229,18 @@ app.post('/api/copilot', async (req, res) => {
       // tier and drops every call to the deterministic fallback. Opt in with GEMINI_GROUNDING=1
       // (paid keys); default off so a free-tier key still gets real model replies.
       const useGrounding = /^(1|true|on)$/i.test(process.env.GEMINI_GROUNDING || '');
+      // Copilot edits are structured (drop/move/insert against a known itinerary), not open-ended
+      // reasoning — the flash model's default "thinking" added ~40s for no quality gain. Disable it
+      // (thinkingBudget:0) for snappy replies; override with GEMINI_THINKING_BUDGET if needed.
+      const thinkingBudget = Number.isFinite(Number(process.env.GEMINI_THINKING_BUDGET))
+        ? Number(process.env.GEMINI_THINKING_BUDGET) : 0;
       const response = await ai.models.generateContent({
         model: process.env.GEMINI_FLASH_MODEL || 'gemini-flash-latest',
         contents: safeQuery,
         config: {
           systemInstruction: systemInstruction,
           temperature: 0.2,
+          thinkingConfig: { thinkingBudget },
           ...(useGrounding ? { tools: [{ googleSearch: {} }] } : {}),
         }
       });
