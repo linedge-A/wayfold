@@ -225,13 +225,17 @@ app.post('/api/copilot', async (req, res) => {
       const MAX_QUERY_LENGTH = 2000;
       const safeQuery = String(query || '').slice(0, MAX_QUERY_LENGTH);
 
+      // Google Search grounding sharpens place facts but needs a paid tier — it 429s on the free
+      // tier and drops every call to the deterministic fallback. Opt in with GEMINI_GROUNDING=1
+      // (paid keys); default off so a free-tier key still gets real model replies.
+      const useGrounding = /^(1|true|on)$/i.test(process.env.GEMINI_GROUNDING || '');
       const response = await ai.models.generateContent({
         model: process.env.GEMINI_FLASH_MODEL || 'gemini-flash-latest',
         contents: safeQuery,
         config: {
           systemInstruction: systemInstruction,
           temperature: 0.2,
-          tools: [{ googleSearch: {} }]
+          ...(useGrounding ? { tools: [{ googleSearch: {} }] } : {}),
         }
       });
 

@@ -7,3 +7,9 @@ build/
 .DS_Store
 Thumbs.db
 *.zip
+
+# Firebase functions build + local secrets
+functions/lib/
+functions/.env
+functions/.secret.local
+.env.bak*
