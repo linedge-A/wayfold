@@ -138,20 +138,20 @@ export default function ExplorePage({ onViewChange }: ExplorePageProps) {
   });
 
   return (
-    <div className="flex-1 h-full bg-slate-50 overflow-y-auto custom-scrollbar">
+    <div className="flex-1 h-full bg-[#F7F6F2] overflow-y-auto custom-scrollbar">
       <main className="max-w-7xl mx-auto px-6 py-8">
         {/* Header Controls */}
         <section className="mb-10">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full md:w-auto">
               <div className="relative w-full sm:w-72">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4.5 h-4.5" />
-                <input 
-                  type="text" 
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#6A7470] w-4.5 h-4.5" />
+                <input
+                  type="text"
                   placeholder="Search destinations..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-11 pr-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all shadow-sm"
+                  className="w-full pl-11 pr-4 py-2.5 bg-white border border-[#E4E2DE] rounded-[8px] text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all shadow-sm"
                 />
               </div>
               
@@ -160,10 +160,10 @@ export default function ExplorePage({ onViewChange }: ExplorePageProps) {
                   <button
                     key={tag}
                     onClick={() => setActiveTag(tag)}
-                    className={`px-5 py-2.5 rounded-full text-xs font-bold transition-all whitespace-nowrap cursor-pointer border ${
-                      activeTag === tag 
-                        ? 'bg-primary text-white border-primary shadow-md shadow-primary/20' 
-                        : 'bg-white text-slate-500 border-slate-200 hover:border-primary/30 hover:text-primary transition-colors'
+                    className={`px-5 py-2.5 rounded-[8px] text-xs font-bold transition-all whitespace-nowrap cursor-pointer border ${
+                      activeTag === tag
+                        ? 'bg-primary text-white border-primary shadow-md shadow-primary/20'
+                        : 'bg-white text-[#6A7470] border-[#E4E2DE] hover:border-primary/30 hover:text-primary transition-colors'
                     }`}
                   >
                     {tag}
@@ -173,7 +173,7 @@ export default function ExplorePage({ onViewChange }: ExplorePageProps) {
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Sort by:</span>
+              <span className="text-[11px] font-bold text-[#6A7470] uppercase tracking-widest">Sort by:</span>
               <select className="bg-transparent border-none text-sm font-bold text-on-surface focus:ring-0 cursor-pointer p-1 outline-none">
                 <option>Popular</option>
                 <option>Newest</option>
@@ -196,7 +196,7 @@ export default function ExplorePage({ onViewChange }: ExplorePageProps) {
 
         {/* Load More */}
         <div className="mt-16 flex justify-center pb-12">
-          <button className="px-10 py-3.5 bg-white border border-slate-200 rounded-2xl text-sm font-bold text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm active:scale-95 cursor-pointer">
+          <button className="px-10 py-3.5 bg-white border border-[#E4E2DE] rounded-[10px] text-sm font-bold text-[#6A7470] hover:bg-[#F7F6F2] hover:border-[#D9DDD8] transition-all shadow-sm active:scale-95 cursor-pointer">
             Load More Trips
           </button>
         </div>
@@ -212,7 +212,7 @@ function ExploreCard(props: { trip: ExploreTrip; key?: any; onViewChange?: (view
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ y: -4 }}
-      className="group flex flex-col bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:shadow-slate-200/50 transition-all"
+      className="group flex flex-col bg-white border border-slate-100 rounded-[8px] overflow-hidden shadow-sm hover:shadow-md hover:shadow-slate-200/50 transition-all"
     >
       <div className="relative aspect-[4/3] overflow-hidden">
         <img 
@@ -223,12 +223,12 @@ function ExploreCard(props: { trip: ExploreTrip; key?: any; onViewChange?: (view
         />
         <div className="absolute top-4 left-4 flex gap-2">
           {trip.isFeatured && (
-            <span className="h-6 px-3 flex items-center bg-primary/90 backdrop-blur-md text-white rounded-full text-[10px] font-bold tracking-wider uppercase shadow-lg">
+            <span className="h-6 px-3 flex items-center bg-primary/90 backdrop-blur-md text-white rounded-[8px] text-[10px] font-bold tracking-wider uppercase shadow-lg">
               Featured
             </span>
           )}
         </div>
-        <div className="absolute bottom-4 right-4 bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-lg text-white text-[11px] font-bold flex items-center gap-1.5 border border-white/20">
+        <div className="absolute bottom-4 right-4 bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-[8px] text-white text-[11px] font-bold flex items-center gap-1.5 border border-white/20">
           <Bookmark className="w-3.5 h-3.5 fill-white" />
           Saved
         </div>
@@ -240,26 +240,26 @@ function ExploreCard(props: { trip: ExploreTrip; key?: any; onViewChange?: (view
             <div className="w-6 h-6 rounded-full overflow-hidden bg-slate-100 border border-slate-100">
               <img src={trip.creator.avatar} alt={trip.creator.name} className="w-full h-full object-cover" />
             </div>
-            <span className="text-[11px] font-bold text-slate-500">{trip.creator.name}</span>
+            <span className="text-[11px] font-bold text-[#6A7470]">{trip.creator.name}</span>
           </div>
-          <span className="text-[10px] font-bold text-slate-300 uppercase tracking-tight">{trip.date}</span>
+          <span className="text-[10px] font-bold text-[#D9DDD8] uppercase tracking-tight">{trip.date}</span>
         </div>
 
         <h3 className="text-lg font-bold text-on-surface mb-1.5 group-hover:text-primary transition-colors">{trip.title}</h3>
-        <p className="text-sm text-slate-500 leading-relaxed line-clamp-2 mb-5">
+        <p className="text-sm text-[#6A7470] leading-relaxed line-clamp-2 mb-5">
           {trip.description}
         </p>
 
         <div className="flex items-center gap-5 mt-auto mb-6">
-          <div className="flex items-center gap-1.5 text-slate-400">
+          <div className="flex items-center gap-1.5 text-[#6A7470]">
             <MapPin className="w-3.5 h-3.5" />
             <span className="text-xs font-bold">{trip.stops} Stops</span>
           </div>
-          <div className="flex items-center gap-1.5 text-slate-400">
+          <div className="flex items-center gap-1.5 text-[#6A7470]">
             <Calendar className="w-3.5 h-3.5" />
             <span className="text-xs font-bold">{trip.days} Days</span>
           </div>
-          <div className="flex items-center gap-1.5 text-slate-400">
+          <div className="flex items-center gap-1.5 text-[#6A7470]">
             <Heart className="w-3.5 h-3.5" />
             <span className="text-xs font-bold">{trip.likes}</span>
           </div>
@@ -268,11 +268,11 @@ function ExploreCard(props: { trip: ExploreTrip; key?: any; onViewChange?: (view
         <div className="flex gap-2.5">
           <button 
             onClick={() => { if (onViewChange) onViewChange('plan'); }}
-            className="flex-1 h-11 bg-primary text-white rounded-xl text-sm font-bold hover:bg-accent-primary-hover active:scale-[0.97] transition-all shadow-lg shadow-primary/20 cursor-pointer"
+            className="flex-1 h-11 bg-primary text-white rounded-[10px] text-sm font-bold hover:bg-accent-primary-hover active:scale-[0.97] transition-all shadow-lg shadow-primary/20 cursor-pointer"
           >
             View Itinerary
           </button>
-          <button className="w-11 h-11 flex items-center justify-center bg-white border border-slate-200 rounded-xl text-primary hover:bg-primary-soft hover:border-primary/30 transition-all active:scale-[0.97] cursor-pointer">
+          <button className="w-11 h-11 flex items-center justify-center bg-white border border-[#E4E2DE] rounded-[10px] text-primary hover:bg-primary-soft hover:border-primary/30 transition-all active:scale-[0.97] cursor-pointer">
             <Bookmark className="w-5 h-5" />
           </button>
         </div>

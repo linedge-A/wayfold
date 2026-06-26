@@ -243,18 +243,18 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
   // If the user has not pasted their active key, present a beautiful layout guide
   if (!hasValidKey) {
     return (
-      <section className="flex-1 bg-white border border-border-subtle rounded-2xl overflow-hidden relative shadow-sm flex flex-col min-h-[220px]">
-        <div className="flex-1 bg-slate-50 relative overflow-hidden flex items-center justify-center p-6">
-          <div className="max-w-md w-full bg-white p-6 rounded-2xl border border-dashed border-slate-300 shadow-sm text-center">
+      <section className="flex-1 bg-white border border-border-subtle rounded-[8px] overflow-hidden relative shadow-sm flex flex-col min-h-[220px]">
+        <div className="flex-1 bg-[#F7F6F2] relative overflow-hidden flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-white p-6 rounded-[8px] border border-dashed border-slate-300 shadow-sm text-center">
             <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4 text-blue-600">
               <MapPin className="w-6 h-6" />
             </div>
-            <h2 className="text-[15px] font-bold text-slate-900 mb-2">Google Maps Key Needed</h2>
-            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+            <h2 className="text-[15px] font-bold text-[#36453F] mb-2">Google Maps Key Needed</h2>
+            <p className="text-xs text-[#6A7470] mb-4 leading-relaxed">
               Connect this Kyoto travel dashboard to a live, interactive Google Maps display to view exact locations, pin drops, and relative distances!
             </p>
-            
-            <div className="text-left bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs text-slate-700 leading-normal mb-4 flex flex-col gap-2.5">
+
+            <div className="text-left bg-[#F7F6F2] p-4 rounded-[8px] border border-slate-200 text-xs text-[#6A7470] leading-normal mb-4 flex flex-col gap-2.5">
               <div>
                 <span className="font-bold text-blue-600">Step 1:</span> Get a real Maps key:
                 <a 
@@ -274,7 +274,7 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
                 <span className="font-bold text-blue-600">Step 3:</span> Or manually: Open <strong>Settings</strong> (⚙️ gear icon, top-right) &rarr; <strong>Secrets</strong> &rarr; add <code className="bg-slate-200 px-1 py-0.5 rounded font-mono font-medium">GOOGLE_MAPS_PLATFORM_KEY</code> &rarr; save.
               </div>
             </div>
-            <p className="text-[10px] text-slate-400 italic">
+            <p className="text-[10px] text-[#6A7470] italic">
               *The app re-compiles automatically after adding your key. No reload required.
             </p>
           </div>
@@ -284,7 +284,7 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
   }
 
   return (
-    <section className="flex-1 bg-white border border-border-subtle rounded-2xl overflow-hidden relative shadow-sm flex flex-col min-h-[220px]">
+    <section className="flex-1 bg-white border border-border-subtle rounded-[8px] overflow-hidden relative shadow-sm flex flex-col min-h-[220px]">
       <div className="flex-1 bg-[#F1F5F9] relative overflow-hidden">
         <Map
           defaultCenter={{ lat: 35.0116, lng: 135.7681 }}
@@ -311,11 +311,15 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
           {isPins && mapItems.map((item) => {
             const isSelected = selectedItemId === item.id;
             const isHovered = hoveredItemId === item.id;
-            const categoryColor = item.category === 'food' ? '#F2994A' :
-                                item.category === 'sight' ? '#2F80ED' :
-                                item.category === 'stay' ? '#9B51E0' :
-                                item.category === 'transit' ? '#27AE60' : '#3B82F6';
-            
+            const CAT_COLORS: Record<string, { border: string; text: string; tint: string }> = {
+              sight:   { border: '#4A76A8', text: '#355888', tint: '#EAF0F8' },
+              food:    { border: '#A06820', text: '#8A5A12', tint: '#F8EEDC' },
+              stay:    { border: '#7A5068', text: '#5C3E4D', tint: '#F1E9EE' },
+              transit: { border: '#4E6B57', text: '#2F5D3A', tint: '#E7F3EA' },
+              booking: { border: '#B0532E', text: '#8A3A2E', tint: '#F8EDEA' },
+            };
+            const catStyle = CAT_COLORS[item.category] ?? { border: '#8A9490', text: '#6A7470', tint: '#EDEBE7' };
+
             return (
               <AdvancedMarker
                 key={item.id}
@@ -328,19 +332,14 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
                   onMouseEnter={() => onHoverItem?.(item.id)}
                   onMouseLeave={() => onHoverItem?.(undefined)}
                 >
-                  {isSelected && (
-                    <div
-                      className="absolute inset-0 w-9 h-9 rounded-full -translate-x-[2px] -translate-y-[2px]"
-                      style={{ backgroundColor: `${categoryColor}33` }}
-                    />
-                  )}
                   <div
-                    className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm border-[3px] shadow-lg transition-all duration-150 bg-white ${
-                      isSelected ? 'scale-110' : isHovered ? 'scale-110 ring-2 ring-primary/50' : 'hover:scale-105'
+                    className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm border-[3px] shadow-lg transition-all duration-150 ${
+                      isSelected ? 'scale-110' : isHovered ? 'scale-110' : 'hover:scale-105'
                     }`}
                     style={{
-                      borderColor: categoryColor,
-                      color: categoryColor
+                      borderColor: catStyle.border,
+                      color: catStyle.text,
+                      backgroundColor: isSelected ? catStyle.tint : '#FFFFFF',
                     }}
                   >
                     {item.indexOrder}
@@ -372,7 +371,7 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
                     className={`rounded-full flex items-center justify-center shadow-md transition-all duration-150 ${
                       isSelected
                         ? `w-8 h-8 border-2 scale-110 ${isFood ? 'bg-orange-500 text-white border-white' : 'bg-blue-600 text-white border-white'}`
-                        : `w-6 h-6 border border-dashed bg-white/90 hover:scale-110 hover:bg-white ${isFood ? 'text-orange-500 border-orange-300' : 'text-slate-400 border-slate-300'}`
+                        : `w-6 h-6 border border-dashed bg-white/90 hover:scale-110 hover:bg-white ${isFood ? 'text-orange-500 border-orange-300' : 'text-[#6A7470] border-slate-300'}`
                     }`}
                   >
                     <Icon className={isSelected ? 'w-4 h-4' : 'w-3 h-3'} />
@@ -389,21 +388,21 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
               onCloseClick={() => onSelectItem?.(undefined)}
               headerDisabled={true}
             >
-              <div className="p-1 min-w-[180px] max-w-[260px] text-slate-800">
+              <div className="p-1 min-w-[180px] max-w-[260px] text-[#36453F]">
                 <div className="flex items-center gap-1.5 mb-1">
                   <span className={`w-2 h-2 rounded-full ${selectedItem.category === 'food' ? 'bg-orange-500' : 'bg-blue-500'}`} />
-                  <h3 className="font-bold text-xs tracking-tight text-slate-900">{selectedItem.title}</h3>
+                  <h3 className="font-bold text-xs tracking-tight text-[#36453F]">{selectedItem.title}</h3>
                 </div>
-                <p className="text-[10px] text-slate-500 font-medium mb-1">{selectedItem.area}</p>
-                
+                <p className="text-[10px] text-[#6A7470] font-medium mb-1">{selectedItem.area}</p>
+
                 {selectedItem.openingHours && (
-                  <p className="text-[9px] text-slate-400">Hours: {selectedItem.openingHours}</p>
+                  <p className="text-[9px] text-[#6A7470]">Hours: {selectedItem.openingHours}</p>
                 )}
                 {selectedItem.startTime && (
-                  <p className="text-[9px] text-slate-400 font-medium">Scheduled: {selectedItem.startTime} - {selectedItem.endTime}</p>
+                  <p className="text-[9px] text-[#6A7470] font-medium">Scheduled: {selectedItem.startTime} - {selectedItem.endTime}</p>
                 )}
                 {selectedItem.note && (
-                  <p className="text-[9px] bg-slate-50 text-slate-600 p-1 rounded border border-slate-100 mt-1 italic leading-normal">
+                  <p className="text-[9px] bg-[#F7F6F2] text-[#6A7470] p-1 rounded border border-[#E4E2DE] mt-1 italic leading-normal">
                     "{selectedItem.note}"
                   </p>
                 )}
@@ -413,7 +412,7 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
         </Map>
 
         {mapItems.length === 0 && candidateItems.length === 0 && (
-          <div className="absolute inset-x-0 bottom-4 mx-auto max-w-[220px] bg-white border border-border-subtle rounded-full text-center py-1.5 px-3 shadow-md text-xs text-slate-500 font-medium pointer-events-none z-10">
+          <div className="absolute inset-x-0 bottom-4 mx-auto max-w-[220px] bg-white border border-border-subtle rounded-[8px] text-center py-1.5 px-3 shadow-md text-xs text-[#6A7470] font-medium pointer-events-none z-10">
             Leisure day – map centered on Kyoto
           </div>
         )}

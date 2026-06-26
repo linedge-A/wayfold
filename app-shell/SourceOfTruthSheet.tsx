@@ -13,7 +13,7 @@ interface SourceOfTruthProps {
 
 export default function SourceOfTruthSheet({ appState, hasApi }: SourceOfTruthProps) {
   return (
-    <div className="w-full bg-slate-900 text-slate-100 p-6 rounded-2xl border border-slate-800 shadow-2xl relative select-text">
+    <div className="w-full bg-slate-900 text-slate-100 p-6 rounded-[8px] border border-slate-800 shadow-2xl relative select-text">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <Database className="w-5 h-5 text-emerald-400" />
@@ -39,7 +39,7 @@ export default function SourceOfTruthSheet({ appState, hasApi }: SourceOfTruthPr
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Core Metadata Schema */}
-        <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800 flex flex-col gap-3">
+        <div className="bg-slate-950/80 p-4 rounded-[8px] border border-slate-800 flex flex-col gap-3">
           <h4 className="text-slate-400 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-800 pb-2">
             <KeySquare className="w-3.5 h-3.5 text-blue-400" />
             Trip Brief &amp; Config
@@ -55,7 +55,7 @@ export default function SourceOfTruthSheet({ appState, hasApi }: SourceOfTruthPr
         </div>
 
         {/* Mapped Stops Schema */}
-        <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800 flex flex-col gap-3">
+        <div className="bg-slate-950/80 p-4 rounded-[8px] border border-slate-800 flex flex-col gap-3">
           <h4 className="text-slate-400 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-800 pb-2">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
             Planned Stops ({appState.itineraryItems.length})
@@ -78,7 +78,7 @@ export default function SourceOfTruthSheet({ appState, hasApi }: SourceOfTruthPr
         </div>
 
         {/* Active Bookings Schema */}
-        <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800 flex flex-col gap-3">
+        <div className="bg-slate-950/80 p-4 rounded-[8px] border border-slate-800 flex flex-col gap-3">
           <h4 className="text-slate-400 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-800 pb-2">
             <Database className="w-3.5 h-3.5 text-orange-400" />
             Bookings Ledger ({appState.bookings.length})

@@ -98,12 +98,12 @@ export default function TripsPage({ currentTrip, currentTripStops, onViewChange,
       {/* Left List Panel */}
       <aside className="w-[520px] bg-white border-r border-border-subtle flex flex-col h-full shrink-0">
         <div className="p-4 border-b border-border-subtle flex items-center justify-between gap-3">
-          <div className="flex gap-1 bg-surface-container p-1 rounded-full w-fit">
+          <div className="flex gap-1 bg-surface-container p-1 rounded-[8px] w-fit">
             {(['all', 'upcoming', 'past', 'draft'] as const).map(f => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`px-4 py-1.5 rounded-full text-[13px] font-bold transition-all capitalize cursor-pointer ${
+                className={`px-4 py-1.5 rounded-[8px] text-[13px] font-bold transition-all capitalize cursor-pointer ${
                   filter === f ? 'bg-white text-primary shadow-sm' : 'text-secondary hover:text-on-surface'
                 }`}
               >
@@ -111,7 +111,7 @@ export default function TripsPage({ currentTrip, currentTripStops, onViewChange,
               </button>
             ))}
           </div>
-          <button className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-accent-primary-hover active:scale-95 transition-all cursor-pointer shrink-0">
+          <button className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-[10px] font-bold text-sm hover:bg-accent-primary-hover active:scale-95 transition-all cursor-pointer shrink-0">
             <Plus className="w-4 h-4" />
             New Trip
           </button>
@@ -171,7 +171,7 @@ export default function TripsPage({ currentTrip, currentTripStops, onViewChange,
       {/* Right Map/Insights Panel */}
       <section className="flex-1 relative overflow-hidden bg-bg-panel-muted flex flex-col">
         <div className="absolute top-6 left-6 flex flex-col gap-4 z-10">
-          <div className="bg-white p-4 rounded-xl border border-border-subtle shadow-md w-64 animate-fadeIn">
+          <div className="bg-white p-4 rounded-[8px] border border-border-subtle shadow-md w-64 animate-fadeIn">
             <h4 className="text-sm font-bold text-on-surface mb-3 flex items-center gap-2">
               <Globe className="w-4 h-4 text-primary" /> Visited Insights
             </h4>
@@ -221,9 +221,9 @@ export default function TripsPage({ currentTrip, currentTripStops, onViewChange,
             })}
           </Map>
           ) : (
-            <div className="w-full h-full flex flex-col items-center justify-center text-center p-8 text-slate-400">
+            <div className="w-full h-full flex flex-col items-center justify-center text-center p-8 text-[#6A7470]">
               <Globe className="w-10 h-10 mb-3 opacity-60" />
-              <p className="text-sm font-bold text-slate-500">Archive map preview</p>
+              <p className="text-sm font-bold text-[#6A7470]">Archive map preview</p>
               <p className="text-xs mt-1 max-w-[220px]">Add a Google Maps key to view your trips on the globe.</p>
             </div>
           )}
@@ -267,7 +267,7 @@ function TripArchiveCard(props: { trip: TripArchiveItem; key?: any; onClick?: ()
     <motion.div
       whileHover={{ y: -2 }}
       onClick={onClick}
-      className={`bg-white rounded-xl border border-border-subtle shadow-sm overflow-hidden group cursor-pointer hover:border-primary/40 hover:shadow-md transition-all ${!isUpcoming ? 'opacity-90 grayscale-[10%]' : ''}`}
+      className={`bg-white rounded-[8px] border border-border-subtle shadow-sm overflow-hidden group cursor-pointer hover:border-primary/40 hover:shadow-md transition-all ${!isUpcoming ? 'opacity-90 grayscale-[10%]' : ''}`}
     >
       <div className="aspect-[2/1] w-full relative overflow-hidden">
         <img
@@ -277,7 +277,7 @@ function TripArchiveCard(props: { trip: TripArchiveItem; key?: any; onClick?: ()
           referrerPolicy="no-referrer"
         />
         <div className="absolute top-4 left-4">
-          <div className={`px-2 py-0.5 rounded-full text-xs font-medium tracking-wider uppercase border shadow-sm ${
+          <div className={`px-2 py-0.5 rounded-[8px] text-xs font-medium tracking-wider uppercase border shadow-sm ${
             isUpcoming ? 'bg-primary text-white border-primary' :
             isDraft ? 'bg-warning/10 text-warning border-warning/30' :
             'bg-success/10 text-success border-success/30'
@@ -312,7 +312,7 @@ function TripArchiveCard(props: { trip: TripArchiveItem; key?: any; onClick?: ()
                 imageUrl: trip.imageUrl
               });
             }}
-            className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 opacity-0 group-hover:opacity-100 group-hover:bg-primary-soft group-hover:text-primary hover:scale-110 active:scale-95 transition-all shadow-sm cursor-pointer"
+            className="w-10 h-10 rounded-[10px] bg-[#F7F6F2] flex items-center justify-center text-[#D9DDD8] opacity-0 group-hover:opacity-100 group-hover:bg-primary-soft group-hover:text-primary hover:scale-110 active:scale-95 transition-all shadow-sm cursor-pointer"
             title="Share trip"
           >
             <Share2 className="w-4 h-4" />
