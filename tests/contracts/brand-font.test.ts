@@ -32,10 +32,10 @@ console.log('Brand font contract (design-system token, not inline/link)');
 
 // 1) The token + font load live in the design system (the proven mechanism).
 const tokens = read('design-system/tokens.css');
-check('tokens.css loads DM Sans via the Google Fonts @import', () =>
-  assert.match(tokens, /@import url\([^)]*DM\+Sans[^)]*\)/, 'DM Sans missing from the @import'));
+check('tokens.css loads IBM Plex Sans via the Google Fonts @import', () =>
+  assert.match(tokens, /@import url\([^)]*IBM\+Plex\+Sans[^)]*\)/, 'IBM Plex Sans missing from the @import'));
 check('tokens.css defines the --font-brand theme token', () =>
-  assert.match(tokens, /--font-brand:\s*["']?DM Sans["']?/, '--font-brand token missing or not DM Sans'));
+  assert.match(tokens, /--font-brand:\s*["']?IBM Plex Sans["']?/, '--font-brand token missing or not IBM Plex Sans'));
 
 // 2) Every wordmark consumes the token via the utility, with no inline fallback.
 for (const f of ['app-shell/TopHeader.tsx', 'app-shell/ShareModal.tsx']) {

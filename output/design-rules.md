@@ -122,9 +122,9 @@ Use category color only as a small dot, tag accent, or icon tint. Never use full
 Typography must meet WCAG-friendly sizing and contrast expectations for productivity tools.
 
 ### Font family
-- Primary UI font: `Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`
-- Use one UI font family only (Inter) for all product surfaces to prevent drift.
-- **Brand wordmark exception**: the `wayfold` logo wordmark (top header + share card only) uses the brand display font **DM Sans**, exposed as the `--font-brand` token and the `font-brand` Tailwind utility. Style: bold (700), lowercase, tight tracking (`-0.03em`). This is the single sanctioned display font and the only allowed exception to "one font family." Do **not** apply `font-brand` to any product UI text (titles, chips, body, labels).
+- Primary UI font: `"IBM Plex Sans", ui-sans-serif, system-ui, sans-serif` (Edgeland visual language; `--font-sans` in `design-system/tokens.css`)
+- Use one UI font family only (IBM Plex Sans) for all product surfaces to prevent drift.
+- **Brand wordmark**: the `wayfold` logo wordmark (top header + share card only) uses the brand font **IBM Plex Sans**, exposed as the `--font-brand` token and the `font-brand` Tailwind utility. Style: bold (700), lowercase, tight tracking (`-0.03em`). Under the Edgeland visual language the brand font matches the body family (IBM Plex Sans) — the wordmark is distinguished by weight/case/tracking, not a separate typeface. Do **not** add a second display typeface for product UI text (titles, chips, body, labels).
 
 ### Font tiers
 - `Tier 1 / Page title`: 24px / 32px line height / 600 weight
@@ -668,7 +668,7 @@ The implementation is acceptable only if all are true:
 If a designer or engineer is unsure what to do, default to this:
 - calm neutral surface
 - blue primary accent
-- Inter only (sole exception: `DM Sans` for the `wayfold` brand wordmark via `font-brand`)
+- IBM Plex Sans only (Edgeland visual language); the `wayfold` brand wordmark uses the same family via `font-brand`, set apart by weight/case/tracking
 - 14px body
 - 16px panels
 - 14px chip radius
