@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Bell, Settings, Plus, ChevronDown, FileText, Calendar, Route, Clock, RefreshCw, Sparkles, MoreHorizontal } from 'lucide-react';
+import { Bell, Settings, Plus, ChevronDown, FileText, Calendar, Route, Clock, RefreshCw, Sparkles } from 'lucide-react';
 import PlanInitiateModal from '@/modules/trip-brief/PlanInitiateModal';
 import { TRIPS } from '@/shared/mock-data/trips';
 import type { EngineItem } from '@/modules/constraint-engine/planner';
@@ -166,25 +166,41 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
             </div>
           </div>
 
-          {/* Actions: last-revised · Regenerate (secondary) · Generate (primary) · overflow (Start over) */}
+          {/* Actions: last-revised · Generate (split button with re-plan + start over in dropdown) */}
           <div className="flex items-center gap-2 shrink-0">
             <span className="hidden md:flex items-center gap-1 text-[11px] text-tertiary"><Clock className="w-3 h-3" />Last revised {timeAgo(lastRevisedAt)}</span>
-            <button onClick={() => onRegenerate?.()} title="Re-plan from your pocket, keeping pins & bookings" className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-[10px] border border-border-subtle text-on-surface hover:bg-surface-container-low transition-colors cursor-pointer">
-              <RefreshCw className="w-3.5 h-3.5" />Regenerate
-            </button>
-            <button onClick={() => setIsInitiateModalOpen(true)} title="Generate an itinerary from a fresh brief" className="flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-[10px] bg-primary text-white hover:bg-accent-primary-hover transition-colors cursor-pointer shadow-sm">
-              <Sparkles className="w-3.5 h-3.5" />Generate
-            </button>
-            <div className="relative">
-              <button onClick={() => setIsOverflowOpen(o => !o)} title="More" className="p-1 rounded-[10px] text-secondary hover:bg-surface-container-low transition-colors cursor-pointer">
-                <MoreHorizontal className="w-4 h-4" />
+            {/* Split Generate button — primary action opens fresh brief modal; chevron reveals secondary actions */}
+            <div className="relative flex items-stretch">
+              <button
+                onClick={() => setIsInitiateModalOpen(true)}
+                title="Generate an itinerary from a fresh brief"
+                className="flex items-center gap-1 text-xs font-bold pl-2.5 pr-2 py-1 rounded-l-[10px] bg-primary text-white hover:bg-accent-primary-hover transition-colors cursor-pointer shadow-sm border-r border-white/20"
+              >
+                <Sparkles className="w-3.5 h-3.5" />Generate
+              </button>
+              <button
+                onClick={() => setIsOverflowOpen(o => !o)}
+                title="More generation options"
+                className="flex items-center px-1.5 py-1 rounded-r-[10px] bg-primary text-white hover:bg-accent-primary-hover transition-colors cursor-pointer shadow-sm"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
               </button>
               {isOverflowOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setIsOverflowOpen(false)} />
-                  <div className="absolute top-7 right-0 w-40 bg-white border border-border-subtle rounded-[8px] shadow-lg z-20 py-1 animate-fadeIn">
-                    <button onClick={() => { setIsOverflowOpen(false); onStartOver?.(); }} className="w-full text-left px-3 py-1.5 text-xs font-medium text-danger hover:bg-red-50 transition-colors cursor-pointer">
-                      Start over
+                  <div className="absolute top-[calc(100%+4px)] right-0 w-48 bg-white border border-border-subtle rounded-[8px] shadow-lg z-20 py-1 animate-fadeIn">
+                    <button
+                      onClick={() => { setIsOverflowOpen(false); onRegenerate?.(); }}
+                      className="w-full text-left px-3 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-low transition-colors cursor-pointer flex items-center gap-2"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-secondary" />Re-plan from pocket
+                    </button>
+                    <div className="border-t border-border-subtle my-1" />
+                    <button
+                      onClick={() => { setIsOverflowOpen(false); onStartOver?.(); }}
+                      className="w-full text-left px-3 py-2 text-xs font-medium text-danger hover:bg-red-50 transition-colors cursor-pointer flex items-center gap-2"
+                    >
+                      <span className="w-3.5 h-3.5 flex items-center justify-center text-danger">↺</span>Start over
                     </button>
                   </div>
                 </>

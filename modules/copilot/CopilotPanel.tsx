@@ -496,26 +496,29 @@ export default function CopilotPanel({
         <div ref={chatBottomRef} />
       </div>
 
-      {/* Consolidated Action Area */}
-      <div className="px-3 py-1.5 border-t border-border-subtle bg-white shrink-0 flex flex-col gap-1.5">
+      {/* Consolidated Action Area — safe-area-inset-bottom so iPhone home bar doesn't clip the input */}
+      <div
+        className="px-3 pt-1.5 border-t border-border-subtle bg-white shrink-0 flex flex-col gap-1.5"
+        style={{ paddingBottom: 'max(6px, env(safe-area-inset-bottom))' }}
+      >
         <div className="flex flex-wrap gap-1.5">
           <button
             onClick={() => onApplyPreset('Recommend')}
-            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-0.5 text-[10px] font-bold bg-white hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 text-secondary border border-border-subtle rounded-xl transition-all cursor-pointer shadow-sm"
+            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-[10px] font-bold bg-white hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 text-secondary border border-border-subtle rounded-xl transition-all cursor-pointer shadow-sm"
           >
             <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
             Recommend
           </button>
           <button
             onClick={() => onApplyPreset('Propose')}
-            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-0.5 text-[10px] font-bold bg-white hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 text-secondary border border-border-subtle rounded-xl transition-all cursor-pointer shadow-sm"
+            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-[10px] font-bold bg-white hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 text-secondary border border-border-subtle rounded-xl transition-all cursor-pointer shadow-sm"
           >
             <Coffee className="w-3.5 h-3.5 text-blue-500" />
             Propose
           </button>
           <button
             onClick={() => onApplyPreset('Optimize')}
-            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-0.5 text-[10px] font-bold bg-white hover:bg-primary-50 hover:text-primary hover:border-primary/20 text-secondary border border-border-subtle rounded-xl transition-all cursor-pointer shadow-sm"
+            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-[10px] font-bold bg-white hover:bg-primary-50 hover:text-primary hover:border-primary/20 text-secondary border border-border-subtle rounded-xl transition-all cursor-pointer shadow-sm"
           >
             <RotateCcw className="w-3.5 h-3.5 text-primary" />
             Optimize
@@ -533,20 +536,20 @@ export default function CopilotPanel({
               }
             }}
             placeholder="Ask Copilot..."
-            rows={2}
-            className="w-full pl-3 pr-16 py-2 bg-surface-container-low border border-border-subtle hover:border-primary/30 rounded-xl text-xs outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all resize-none font-sans"
+            rows={3}
+            className="w-full pl-3 pr-16 py-2.5 bg-surface-container-low border border-border-subtle hover:border-primary/30 rounded-xl text-sm outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all resize-none font-sans"
           />
           <div className="absolute right-2 bottom-2.5 flex items-center gap-1">
-            <button className="p-1.5 text-secondary hover:text-primary transition-colors cursor-pointer rounded-lg hover:bg-white/60">
+            <button className="p-2 text-secondary hover:text-primary transition-colors cursor-pointer rounded-lg hover:bg-white/60">
               <Mic className="w-4 h-4" />
             </button>
             <button
               onClick={handleSend}
               title={isLoading ? '查詢中…' : inputText.trim() ? '傳送' : '請輸入問題'}
               disabled={isLoading || !inputText.trim()}
-              className={`p-1.5 rounded-lg transition-colors ${isLoading || !inputText.trim() ? 'bg-secondary/20 text-secondary cursor-not-allowed' : 'bg-primary text-white cursor-pointer hover:bg-accent-primary-hover'}`}
+              className={`p-2 rounded-lg transition-colors ${isLoading || !inputText.trim() ? 'bg-secondary/20 text-secondary cursor-not-allowed' : 'bg-primary text-white cursor-pointer hover:bg-accent-primary-hover'}`}
             >
-              {isLoading ? <Coffee className="w-3.5 h-3.5 animate-pulse" /> : <Send className="w-3.5 h-3.5" />}
+              {isLoading ? <Coffee className="w-4 h-4 animate-pulse" /> : <Send className="w-4 h-4" />}
             </button>
           </div>
         </div>

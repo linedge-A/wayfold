@@ -5,7 +5,7 @@
 
 // ... (keep initial comments)
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Sparkles, Map, Bot, Compass, Plus, ShieldAlert, Calendar, ChevronUp, ListChecks } from 'lucide-react';
+import { Sparkles, Map, Bot, Compass, Plus, ShieldAlert, Calendar, ChevronUp, ChevronDown, ListChecks } from 'lucide-react';
 import { APIProvider, useMapsLibrary } from '@vis.gl/react-google-maps';
 // ...
 import TopHeader from './TopHeader';
@@ -1368,15 +1368,27 @@ function AppContent() {
                     />
                   </div>
 
-                  {/* Horizontal Resizer Drag Handle */}
-                  <div
-                    onMouseDown={handleMiddleDrag}
-                    onDoubleClick={() => { setMiddleHeight(350); setPocketCollapsed(false); }}
-                    className="h-3 hover:h-4 flex items-center justify-center cursor-row-resize group w-full select-none shrink-0 transition-all"
-                    title="Drag to resize map (Double click to reset)"
-                  >
-                    <div className="h-1 w-12 rounded-full bg-[#E4E2DE] group-hover:bg-primary/50 group-active:bg-primary transition-all pointer-events-none" />
-                  </div>
+                  {/* Horizontal Resizer — drag on desktop, tap-to-toggle on mobile */}
+                  {isLargeScreen ? (
+                    <div
+                      onMouseDown={handleMiddleDrag}
+                      onDoubleClick={() => { setMiddleHeight(350); setPocketCollapsed(false); }}
+                      className="h-3 hover:h-4 flex items-center justify-center cursor-row-resize group w-full select-none shrink-0 transition-all"
+                      title="Drag to resize map (Double click to reset)"
+                    >
+                      <div className="h-1 w-12 rounded-full bg-[#E4E2DE] group-hover:bg-primary/50 group-active:bg-primary transition-all pointer-events-none" />
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setPocketCollapsed(p => !p)}
+                      className="shrink-0 h-8 flex items-center justify-center gap-1.5 w-full bg-white border-y border-border-subtle text-[11px] font-semibold text-secondary hover:text-primary transition-colors cursor-pointer select-none"
+                    >
+                      {pocketCollapsed
+                        ? <><ListChecks className="w-3.5 h-3.5 text-primary" />Show bucket list<ChevronDown className="w-3.5 h-3.5" /></>
+                        : <><Map className="w-3.5 h-3.5 text-primary" />Show map only<ChevronUp className="w-3.5 h-3.5" /></>
+                      }
+                    </button>
+                  )}
 
                   {/* Lower Research Pocket Shelf — collapses to a slim toggle when squeezed past its floor */}
                   {pocketCollapsed ? (
