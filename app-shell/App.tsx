@@ -1197,10 +1197,10 @@ function AppContent() {
           <div className="flex border-b border-border-subtle bg-white p-2.5 gap-2 shrink-0 shadow-sm z-10">
             <button
               onClick={() => setActiveMobileTab('itinerary')}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              className={`flex-1 py-2 text-xs font-semibold rounded-[10px] flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                 activeMobileTab === 'itinerary'
                   ? 'bg-primary text-white shadow-sm'
-                  : 'bg-slate-50 hover:bg-slate-100 text-secondary hover:text-primary'
+                  : 'bg-[#F7F6F2] hover:bg-[#EDEBE7] text-secondary hover:text-primary'
               }`}
             >
               <Calendar className="w-3.5 h-3.5" />
@@ -1208,10 +1208,10 @@ function AppContent() {
             </button>
             <button
               onClick={() => setActiveMobileTab('map')}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              className={`flex-1 py-2 text-xs font-semibold rounded-[10px] flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                 activeMobileTab === 'map'
                   ? 'bg-primary text-white shadow-sm'
-                  : 'bg-slate-50 hover:bg-slate-100 text-secondary hover:text-primary'
+                  : 'bg-[#F7F6F2] hover:bg-[#EDEBE7] text-secondary hover:text-primary'
               }`}
             >
               <Map className="w-3.5 h-3.5" />
@@ -1219,10 +1219,10 @@ function AppContent() {
             </button>
             <button
               onClick={() => setActiveMobileTab('copilot')}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              className={`flex-1 py-2 text-xs font-semibold rounded-[10px] flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                 activeMobileTab === 'copilot'
                   ? 'bg-primary text-white shadow-sm'
-                  : 'bg-slate-50 hover:bg-slate-100 text-secondary hover:text-primary'
+                  : 'bg-[#F7F6F2] hover:bg-[#EDEBE7] text-secondary hover:text-primary'
               }`}
             >
               <Bot className="w-3.5 h-3.5" />
@@ -1334,7 +1334,7 @@ function AppContent() {
               className="w-3 hover:w-4 flex items-center justify-center cursor-col-resize group self-stretch select-none shrink-0 transition-all"
               title="Drag to resize sidebar (Double click to reset)"
             >
-              <div className="w-1 h-12 rounded-full bg-slate-200 group-hover:bg-primary/50 group-active:bg-primary transition-all pointer-events-none" />
+              <div className="w-1 h-12 rounded-full bg-[#E4E2DE] group-hover:bg-primary/50 group-active:bg-primary transition-all pointer-events-none" />
             </div>
           )}
 
@@ -1375,14 +1375,14 @@ function AppContent() {
                     className="h-3 hover:h-4 flex items-center justify-center cursor-row-resize group w-full select-none shrink-0 transition-all"
                     title="Drag to resize map (Double click to reset)"
                   >
-                    <div className="h-1 w-12 rounded-full bg-slate-200 group-hover:bg-primary/50 group-active:bg-primary transition-all pointer-events-none" />
+                    <div className="h-1 w-12 rounded-full bg-[#E4E2DE] group-hover:bg-primary/50 group-active:bg-primary transition-all pointer-events-none" />
                   </div>
 
                   {/* Lower Research Pocket Shelf — collapses to a slim toggle when squeezed past its floor */}
                   {pocketCollapsed ? (
                     <button
                       onClick={() => setPocketCollapsed(false)}
-                      className="shrink-0 flex items-center justify-center gap-2 py-1.5 bg-white border border-border-subtle rounded-2xl text-xs font-bold text-secondary hover:text-primary hover:border-primary/40 transition-colors cursor-pointer"
+                      className="shrink-0 flex items-center justify-center gap-2 py-1.5 bg-white border border-border-subtle rounded-[10px] text-xs font-bold text-secondary hover:text-primary hover:border-primary/40 transition-colors cursor-pointer"
                       title="Show the Bucket List"
                     >
                       <ListChecks className="w-3.5 h-3.5 text-primary" />
@@ -1417,7 +1417,7 @@ function AppContent() {
               className="w-3 hover:w-4 flex items-center justify-center cursor-col-resize group self-stretch select-none shrink-0 transition-all"
               title="Drag to resize sidebar (Double click to reset)"
             >
-              <div className="w-1 h-12 rounded-full bg-slate-200 group-hover:bg-primary/50 group-active:bg-primary transition-all pointer-events-none" />
+              <div className="w-1 h-12 rounded-full bg-[#E4E2DE] group-hover:bg-primary/50 group-active:bg-primary transition-all pointer-events-none" />
             </div>
           )}
 

@@ -16,7 +16,7 @@ const PushPinIcon = ({ className, pinned }: { className?: string; pinned: boolea
     <svg
       viewBox="0 0 24 24"
       className={`w-3.5 h-3.5 transition-all duration-300 ease-out transform origin-center pointer-events-none select-none ${
-        pinned ? 'rotate-0 text-blue-500 fill-blue-500/25' : 'rotate-45 text-slate-300 fill-none'
+        pinned ? 'rotate-0 text-blue-500 fill-blue-500/25' : 'rotate-45 text-[#D9DDD8] fill-none'
       } ${className || ''}`}
       stroke="currentColor"
       strokeWidth={pinned ? 2 : 1.5}
@@ -97,11 +97,11 @@ const getDistanceAndDuration = (item1: any, item2: any) => {
 };
 
 const getCategoryCardStyles = (cat: string, isSelected: boolean) => {
-  let bg = 'bg-slate-50';
-  let border = 'border-slate-200';
+  let bg = 'bg-[#F7F6F2]';
+  let border = 'border-[#E4E2DE]';
   let borderLeft = 'border-l-4 border-l-slate-400';
-  let text = 'text-slate-800';
-  let labelBg = 'bg-slate-200/50 text-slate-600';
+  let text = 'text-[#36453F]';
+  let labelBg = 'bg-[#E4E2DE]/50 text-[#6A7470]';
 
   switch (cat) {
     case 'sight':
@@ -140,7 +140,7 @@ const getCategoryCardStyles = (cat: string, isSelected: boolean) => {
       labelBg = 'bg-[#EB5757]/10 text-[#EB5757]';
       break;
     default:
-      bg = isSelected ? 'bg-slate-50/95' : 'bg-[#F8F9FA]';
+      bg = isSelected ? 'bg-[#F7F6F2]/95' : 'bg-[#F8F9FA]';
       border = isSelected ? 'border-[#8D99AE]/50' : 'border-[#8D99AE]/15';
       borderLeft = 'border-l-4 border-l-[#8D99AE]';
       text = 'text-[#535D70]';
@@ -582,7 +582,7 @@ export default function ItineraryPanel({
 
   return (
     <aside
-      className="w-full bg-white border border-border-subtle rounded-2xl flex flex-col shadow-sm shrink-0 overflow-hidden h-full"
+      className="w-full bg-white border border-border-subtle rounded-[8px] flex flex-col shadow-sm shrink-0 overflow-hidden h-full"
     >
       {/* Toolbar — single slim row. The trip identity (title/dates/switcher) lives ONLY in the
           header band now; this row keeps the per-view controls: day navigation centered (day
@@ -658,7 +658,7 @@ export default function ItineraryPanel({
           {/* Share — next to the view switcher */}
           <button
             onClick={() => onShare?.()}
-            className="p-1.5 rounded-md hover:bg-slate-100 transition-colors cursor-pointer text-slate-400 hover:text-primary"
+            className="p-1.5 rounded-md hover:bg-[#EDEBE7] transition-colors cursor-pointer text-[#6A7470] hover:text-primary"
             title="Share current plan"
           >
             <Share2 className="w-4 h-4" />
@@ -666,7 +666,7 @@ export default function ItineraryPanel({
           {viewType === 'day' && (
             <button
               onClick={() => setShowAddForm(!showAddForm)}
-              className="p-1.5 rounded-md hover:bg-slate-100 transition-colors cursor-pointer flex items-center justify-center"
+              className="p-1.5 rounded-md hover:bg-[#EDEBE7] transition-colors cursor-pointer flex items-center justify-center"
               title="Add New Stop"
             >
               <Plus className={`w-4 h-4 transition-transform duration-200 ${showAddForm ? 'rotate-45 text-red-500' : 'text-primary'}`} />
@@ -677,13 +677,13 @@ export default function ItineraryPanel({
 
       {/* Render matching workspace views based on selected setting */}
       {viewType === 'day' && (
-        <div className="flex-1 flex flex-col overflow-hidden bg-slate-50/20">
+        <div className="flex-1 flex flex-col overflow-hidden bg-[#F7F6F2]/20">
           <div className="flex-grow overflow-y-auto custom-scrollbar p-3 space-y-3">
             {/* Flexible / All Day Stops Category */}
             {flexibleItems.length > 0 && (
-              <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl mb-1">
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
+              <div className="p-2.5 bg-[#F7F6F2] border border-[#E4E2DE] rounded-[8px] mb-1">
+                <div className="text-[10px] font-bold text-[#6A7470] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-[#6A7470]" />
                   Flexible & All-Day stops ({flexibleItems.length})
                 </div>
                 <div className="flex flex-col gap-2">
@@ -713,7 +713,7 @@ export default function ItineraryPanel({
                                 <h3 className={`text-xs font-bold leading-tight truncate ${styles.text}`}>
                                   {item.title}
                                 </h3>
-                                <div className="text-[10px] text-slate-500 font-medium mt-0.5 flex items-center gap-1 leading-tight">
+                                <div className="text-[10px] text-[#6A7470] font-medium mt-0.5 flex items-center gap-1 leading-tight">
                                   {item.openingHours ? (
                                     <span className="flex items-center gap-1">
                                       {item.openingHours.split(' - ')[0]} - {item.openingHours.split(' - ')[1]}
@@ -736,7 +736,7 @@ export default function ItineraryPanel({
                                 e.stopPropagation();
                                 onRemoveItem(item.id);
                               }}
-                              className="p-1 rounded-md hover:bg-black/5 opacity-40 hover:opacity-100 text-slate-500 hover:text-red-500 transition-all cursor-pointer shrink-0 -mt-0.5 -mr-0.5"
+                              className="p-1 rounded-md hover:bg-black/5 opacity-40 hover:opacity-100 text-[#6A7470] hover:text-red-500 transition-all cursor-pointer shrink-0 -mt-0.5 -mr-0.5"
                               title="Remove stop"
                             >
                               <X className="w-3.5 h-3.5" />
@@ -746,7 +746,7 @@ export default function ItineraryPanel({
                                 e.stopPropagation();
                                 handleCyclePinState(item);
                               }}
-                              className="p-1 rounded-md hover:bg-black/5 transition-all cursor-pointer text-slate-500"
+                              className="p-1 rounded-md hover:bg-black/5 transition-all cursor-pointer text-[#6A7470]"
                               title="Cycle Pin/Lock State"
                             >
                               {item.pinState === 'hard' ? (
@@ -817,7 +817,7 @@ export default function ItineraryPanel({
                       style={{ top: `${index * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
                     >
                       {/* Hour labels on left lane */}
-                      <span className="absolute -top-2 left-0 w-9 text-right text-[10px] font-bold text-slate-400 select-none pr-1.5">
+                      <span className="absolute -top-2 left-0 w-9 text-right text-[10px] font-bold text-[#6A7470] select-none pr-1.5">
                         {displayHour}
                       </span>
 
@@ -836,7 +836,7 @@ export default function ItineraryPanel({
                           e.currentTarget.classList.remove('bg-primary/5');
                           handleDropOnHour(e, hour);
                         }}
-                        className="absolute left-10 right-0 top-0 bottom-0 hover:bg-slate-50/40 transition-colors duration-100 cursor-cell flex items-center justify-end pr-3"
+                        className="absolute left-10 right-0 top-0 bottom-0 hover:bg-[#F7F6F2]/40 transition-colors duration-100 cursor-cell flex items-center justify-end pr-3"
                         title="Double-click to schedule, or drop an activity here"
                       >
                         <span className="text-[9px] text-primary/60 font-bold bg-white px-2 py-0.5 rounded border border-primary/20 shadow-sm flex items-center gap-0.5 select-none pointer-events-none opacity-0 group-hover/hour:opacity-100 transition-opacity duration-150">
@@ -918,7 +918,7 @@ export default function ItineraryPanel({
                                 <button
                                   onPointerDown={(e) => e.stopPropagation()}
                                   onClick={(e) => { e.stopPropagation(); onMarkMissed(item.id); }}
-                                  className="p-1 rounded-md hover:bg-black/5 opacity-0 group-hover:opacity-50 hover:!opacity-100 text-slate-500 hover:text-amber-600 transition-all cursor-pointer"
+                                  className="p-1 rounded-md hover:bg-black/5 opacity-0 group-hover:opacity-50 hover:!opacity-100 text-[#6A7470] hover:text-amber-600 transition-all cursor-pointer"
                                   title="Mark as missed"
                                 >
                                   <CircleSlash className="w-3.5 h-3.5" />
@@ -930,7 +930,7 @@ export default function ItineraryPanel({
                                   e.stopPropagation();
                                   onRemoveItem(item.id);
                                 }}
-                                className="p-1 rounded-md hover:bg-black/5 opacity-40 hover:opacity-100 text-slate-500 hover:text-red-500 transition-all cursor-pointer"
+                                className="p-1 rounded-md hover:bg-black/5 opacity-40 hover:opacity-100 text-[#6A7470] hover:text-red-500 transition-all cursor-pointer"
                                 title="Remove stop"
                               >
                                 <X className="w-3.5 h-3.5" />
@@ -952,13 +952,13 @@ export default function ItineraryPanel({
                               <>
                                 {item.subCategory || item.budget || item.openingHours ? (
                                   <div className="text-[9px] text-slate-450 font-medium flex-1 flex flex-wrap items-center gap-1 leading-tight pointer-events-none truncate select-none">
-                                    {item.subCategory && <span className="font-semibold text-slate-500">{item.subCategory}</span>}
-                                    {item.budget && <span className="bg-slate-100 text-slate-500 px-0.5 rounded-sm text-[8px] font-bold">{item.budget}</span>}
-                                    {item.openingHours && <span className="text-slate-400 truncate">{item.openingHours}</span>}
+                                    {item.subCategory && <span className="font-semibold text-[#6A7470]">{item.subCategory}</span>}
+                                    {item.budget && <span className="bg-[#EDEBE7] text-[#6A7470] px-0.5 rounded-sm text-[8px] font-bold">{item.budget}</span>}
+                                    {item.openingHours && <span className="text-[#6A7470] truncate">{item.openingHours}</span>}
                                     {item.estimatedDurationMin && <span className="text-slate-450 opacity-60">• {item.estimatedDurationMin}m</span>}
                                   </div>
                                 ) : (
-                                  <span className="text-[10px] text-slate-500 font-medium truncate flex-1 block">
+                                  <span className="text-[10px] text-[#6A7470] font-medium truncate flex-1 block">
                                     {item.area} {item.estimatedDurationMin ? `• ${item.estimatedDurationMin}m` : ''}
                                   </span>
                                 )}
@@ -968,7 +968,7 @@ export default function ItineraryPanel({
                                     e.stopPropagation();
                                     handleCyclePinState(item);
                                   }}
-                                  className="p-1 rounded-md hover:bg-black/5 transition-all text-slate-500 shrink-0 cursor-pointer -mb-0.5 -mr-0.5"
+                                  className="p-1 rounded-md hover:bg-black/5 transition-all text-[#6A7470] shrink-0 cursor-pointer -mb-0.5 -mr-0.5"
                                   title="Cycle Pin/Lock State"
                                 >
                                   {item.pinState === 'hard' ? (
@@ -1015,18 +1015,18 @@ export default function ItineraryPanel({
                     >
                       {/* Live departure badge while sliding */}
                       {isDraggingThis && transitDrag!.moved && (
-                        <span className="absolute -left-1 -top-5 text-[10px] font-bold text-slate-600 bg-white border border-slate-300 rounded px-1.5 py-0.5 shadow-sm select-none z-10">
+                        <span className="absolute -left-1 -top-5 text-[10px] font-bold text-[#6A7470] bg-white border border-slate-300 rounded px-1.5 py-0.5 shadow-sm select-none z-10">
                           leave {fromMinutes(segment.departMin)}
                         </span>
                       )}
                       {/* Middle textual note */}
-                      <div className="flex items-center gap-1.5 px-3 py-1 bg-white/95 backdrop-blur-sm border border-slate-200 rounded-full shadow-sm text-[10px] text-slate-500 select-none max-w-[95%] pointer-events-auto transition-transform duration-100 group-hover:scale-105">
-                        <Car className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span className="font-semibold text-slate-600 capitalize">{segment.mode}</span>
+                      <div className="flex items-center gap-1.5 px-3 py-1 bg-white/95 backdrop-blur-sm border border-slate-200 rounded-[8px] shadow-sm text-[10px] text-[#6A7470] select-none max-w-[95%] pointer-events-auto transition-transform duration-100 group-hover:scale-105">
+                        <Car className="w-3.5 h-3.5 text-[#6A7470] shrink-0" />
+                        <span className="font-semibold text-[#6A7470] capitalize">{segment.mode}</span>
                         <span className="text-slate-355 shrink-0">•</span>
-                        <span className="font-medium text-slate-500 shrink-0">{segment.distance}</span>
+                        <span className="font-medium text-[#6A7470] shrink-0">{segment.distance}</span>
                         <span className="text-slate-355 shrink-0">•</span>
-                        <span className="font-semibold text-slate-700 shrink-0">{segment.durationMin} min</span>
+                        <span className="font-semibold text-[#6A7470] shrink-0">{segment.durationMin} min</span>
                         <span className="text-slate-355 shrink-0">•</span>
                         <a 
                           href={`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(segment.item1.formattedAddress || segment.item1.title)}&destination=${encodeURIComponent(segment.item2.formattedAddress || segment.item2.title)}&travelmode=driving`}
@@ -1077,7 +1077,7 @@ export default function ItineraryPanel({
                         <button
                           type="button"
                           onClick={() => setShowAddForm(false)}
-                          className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                          className="p-1 hover:bg-[#EDEBE7] rounded text-[#6A7470] hover:text-[#36453F] transition-colors cursor-pointer"
                         >
                           <X className="w-3 h-3" />
                         </button>
@@ -1119,7 +1119,7 @@ export default function ItineraryPanel({
                               className={`px-1.5 py-0.5 rounded capitalize transition-all cursor-pointer border ${
                                 newCategory === cat
                                   ? 'bg-primary text-white border-primary shadow-sm'
-                                  : 'bg-white border-border-subtle hover:bg-slate-50 text-secondary'
+                                  : 'bg-white border-border-subtle hover:bg-[#F7F6F2] text-secondary'
                               }`}
                             >
                               {cat}
@@ -1131,7 +1131,7 @@ export default function ItineraryPanel({
                         <button
                           type="button"
                           onClick={() => setShowAddForm(false)}
-                          className="px-2 py-1 text-[10px] font-bold border border-border-subtle rounded-lg text-secondary cursor-pointer bg-white hover:bg-slate-50 transition-colors"
+                          className="px-2 py-1 text-[10px] font-bold border border-border-subtle rounded-lg text-secondary cursor-pointer bg-white hover:bg-[#F7F6F2] transition-colors"
                         >
                           Cancel
                         </button>
@@ -1279,10 +1279,10 @@ export default function ItineraryPanel({
               </div>
             </div>
             <div className="flex gap-2">
-              <span className="px-2.5 py-0.5 bg-surface-container text-on-surface-variant text-[10px] font-bold rounded-full">
+              <span className="px-2.5 py-0.5 bg-surface-container text-on-surface-variant text-[10px] font-bold rounded-[8px]">
                 {items.length} Stops Planned
               </span>
-              <span className="px-2.5 py-0.5 bg-accent-soft text-primary text-[10px] font-bold rounded-full">
+              <span className="px-2.5 py-0.5 bg-accent-soft text-primary text-[10px] font-bold rounded-[8px]">
                 {items.filter(i => i.pinState === 'hard').length} Hard Constraints
               </span>
             </div>

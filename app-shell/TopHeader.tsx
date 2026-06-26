@@ -84,7 +84,7 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
           {onToggleViewSheet && (
             <button
               onClick={onToggleViewSheet}
-              className={`text-[10px] font-semibold px-2.5 py-1 rounded-lg border transition-all ${
+              className={`text-[10px] font-semibold px-2.5 py-1 rounded-[10px] border transition-all ${
                 showComponentSheet
                   ? 'bg-accent-soft text-primary border-primary/20'
                   : 'text-secondary hover:bg-surface-container-low border-border-subtle'
@@ -99,18 +99,18 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
       <div className="flex items-center gap-3">
         <button
           onClick={() => setIsInitiateModalOpen(true)}
-          className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg bg-primary text-white hover:bg-accent-primary-hover transition-colors cursor-pointer shadow-sm"
+          className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-[10px] bg-primary text-white hover:bg-accent-primary-hover transition-colors cursor-pointer shadow-sm"
           title="Plan a new trip"
         >
           <Plus className="w-3.5 h-3.5" />
           Plan new trip
         </button>
         <div className="flex gap-1.5">
-          <button className="p-1.5 hover:bg-surface-container-low rounded-full text-secondary hover:text-primary transition-colors relative cursor-pointer">
+          <button className="p-1.5 hover:bg-surface-container-low rounded-[10px] text-secondary hover:text-primary transition-colors relative cursor-pointer">
             <Bell className="w-4.5 h-4.5" />
             <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-danger border shadow-sm"></span>
           </button>
-          <button className="p-1.5 hover:bg-surface-container-low rounded-full text-secondary hover:text-primary transition-colors cursor-pointer">
+          <button className="p-1.5 hover:bg-surface-container-low rounded-[10px] text-secondary hover:text-primary transition-colors cursor-pointer">
             <Settings className="w-4.5 h-4.5" />
           </button>
         </div>
@@ -138,20 +138,20 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
               {isSwitcherOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setIsSwitcherOpen(false)} />
-                  <div className="absolute top-7 left-0 w-60 bg-white border border-border-subtle rounded-xl shadow-lg z-20 py-1.5 animate-fadeIn">
-                    <div className="px-3 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Your trips</div>
+                  <div className="absolute top-7 left-0 w-60 bg-white border border-border-subtle rounded-[8px] shadow-lg z-20 py-1.5 animate-fadeIn">
+                    <div className="px-3 pb-1 text-[10px] font-bold text-[#6A7470] uppercase tracking-widest">Your trips</div>
                     {Object.values(TRIPS).map(t => (
                       <button
                         key={t.tripBrief.id}
                         onClick={() => { onLoadTrip?.(t.tripBrief.id); setIsSwitcherOpen(false); }}
-                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-slate-50 transition-colors cursor-pointer ${t.tripBrief.id === tripBrief?.id ? 'text-primary font-bold' : 'text-on-surface-variant'}`}
+                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-[#F7F6F2] transition-colors cursor-pointer ${t.tripBrief.id === tripBrief?.id ? 'text-primary font-bold' : 'text-on-surface-variant'}`}
                       >
-                        <FileText className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                        <FileText className="w-3.5 h-3.5 text-[#D9DDD8] shrink-0" />
                         <span className="truncate">{t.tripBrief.title}</span>
                       </button>
                     ))}
                     <div className="mt-1 pt-1 border-t border-border-subtle">
-                      <button onClick={() => { onViewChange('trips'); setIsSwitcherOpen(false); }} className="w-full text-left px-3 py-1.5 text-xs font-medium text-primary hover:bg-slate-50 transition-colors cursor-pointer">
+                      <button onClick={() => { onViewChange('trips'); setIsSwitcherOpen(false); }} className="w-full text-left px-3 py-1.5 text-xs font-medium text-primary hover:bg-[#F7F6F2] transition-colors cursor-pointer">
                         All trips →
                       </button>
                     </div>
@@ -160,29 +160,29 @@ export default function TopHeader({ onToggleViewSheet, showComponentSheet, curre
               )}
             </div>
             <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-on-surface-variant">
-              {dateRange && <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-white border border-border-subtle"><Calendar className="w-3 h-3" />{dateRange}</span>}
-              {tripBrief?.style && <span className="px-2 py-0.5 rounded-full bg-white border border-border-subtle capitalize">{tripBrief.style}</span>}
-              {tripBrief?.transport && <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-white border border-border-subtle capitalize"><Route className="w-3 h-3" />{tripBrief.transport}</span>}
+              {dateRange && <span className="flex items-center gap-1 px-2 py-0.5 rounded-[8px] bg-white border border-border-subtle"><Calendar className="w-3 h-3" />{dateRange}</span>}
+              {tripBrief?.style && <span className="px-2 py-0.5 rounded-[8px] bg-white border border-border-subtle capitalize">{tripBrief.style}</span>}
+              {tripBrief?.transport && <span className="flex items-center gap-1 px-2 py-0.5 rounded-[8px] bg-white border border-border-subtle capitalize"><Route className="w-3 h-3" />{tripBrief.transport}</span>}
             </div>
           </div>
 
           {/* Actions: last-revised · Regenerate (secondary) · Generate (primary) · overflow (Start over) */}
           <div className="flex items-center gap-2 shrink-0">
             <span className="hidden md:flex items-center gap-1 text-[11px] text-tertiary"><Clock className="w-3 h-3" />Last revised {timeAgo(lastRevisedAt)}</span>
-            <button onClick={() => onRegenerate?.()} title="Re-plan from your pocket, keeping pins & bookings" className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg border border-border-subtle text-on-surface hover:bg-surface-container-low transition-colors cursor-pointer">
+            <button onClick={() => onRegenerate?.()} title="Re-plan from your pocket, keeping pins & bookings" className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-[10px] border border-border-subtle text-on-surface hover:bg-surface-container-low transition-colors cursor-pointer">
               <RefreshCw className="w-3.5 h-3.5" />Regenerate
             </button>
-            <button onClick={() => setIsInitiateModalOpen(true)} title="Generate an itinerary from a fresh brief" className="flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg bg-primary text-white hover:bg-accent-primary-hover transition-colors cursor-pointer shadow-sm">
+            <button onClick={() => setIsInitiateModalOpen(true)} title="Generate an itinerary from a fresh brief" className="flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-[10px] bg-primary text-white hover:bg-accent-primary-hover transition-colors cursor-pointer shadow-sm">
               <Sparkles className="w-3.5 h-3.5" />Generate
             </button>
             <div className="relative">
-              <button onClick={() => setIsOverflowOpen(o => !o)} title="More" className="p-1 rounded-lg text-secondary hover:bg-surface-container-low transition-colors cursor-pointer">
+              <button onClick={() => setIsOverflowOpen(o => !o)} title="More" className="p-1 rounded-[10px] text-secondary hover:bg-surface-container-low transition-colors cursor-pointer">
                 <MoreHorizontal className="w-4 h-4" />
               </button>
               {isOverflowOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setIsOverflowOpen(false)} />
-                  <div className="absolute top-7 right-0 w-40 bg-white border border-border-subtle rounded-xl shadow-lg z-20 py-1 animate-fadeIn">
+                  <div className="absolute top-7 right-0 w-40 bg-white border border-border-subtle rounded-[8px] shadow-lg z-20 py-1 animate-fadeIn">
                     <button onClick={() => { setIsOverflowOpen(false); onStartOver?.(); }} className="w-full text-left px-3 py-1.5 text-xs font-medium text-danger hover:bg-red-50 transition-colors cursor-pointer">
                       Start over
                     </button>

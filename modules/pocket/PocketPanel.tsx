@@ -27,7 +27,7 @@ function RangeBar({ min, max, step, lo, hi, onChange }: {
         .pp-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;pointer-events:auto;height:14px;width:14px;border-radius:9999px;background:#005ab6;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3);cursor:pointer;}
         .pp-range::-moz-range-thumb{pointer-events:auto;height:14px;width:14px;border-radius:9999px;background:#005ab6;border:2px solid #fff;cursor:pointer;}
       `}</style>
-      <div className="absolute left-0 right-0 h-1 rounded-full bg-slate-200" />
+      <div className="absolute left-0 right-0 h-1 rounded-full bg-[#E4E2DE]" />
       <div className="absolute h-1 rounded-full bg-primary" style={{ left: `${pct(lo)}%`, right: `${100 - pct(hi)}%` }} />
       <input type="range" className="pp-range" min={min} max={max} step={step} value={lo}
         onChange={e => onChange([Math.min(Number(e.target.value), hi), hi])} />
@@ -297,7 +297,7 @@ export default function PocketPanel({
   }, [allItems, groupBy, hasFocus, mapZoom]);
 
   return (
-    <section className="flex-1 bg-white border border-border-subtle rounded-2xl overflow-hidden shadow-sm flex flex-col min-h-[160px]">
+    <section className="flex-1 bg-white border border-border-subtle rounded-[8px] overflow-hidden shadow-sm flex flex-col min-h-[160px]">
       {/* Bucket List Main Header */}
       <div className="px-3 py-2 border-b border-border-subtle flex items-center gap-2 bg-white shrink-0 relative">
         <div className="flex items-center gap-1.5 shrink-0">
@@ -312,7 +312,7 @@ export default function PocketPanel({
             placeholder="Search saved places"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-7 py-1.5 bg-slate-50 border border-slate-200 focus:border-primary/60 rounded-xl text-xs outline-none focus:ring-1 focus:ring-primary transition-all font-medium text-on-surface placeholder:text-slate-400"
+            className="w-full pl-8 pr-7 py-1.5 bg-[#F7F6F2] border border-[#E4E2DE] focus:border-primary/60 rounded-[8px] text-xs outline-none focus:ring-1 focus:ring-primary transition-all font-medium text-on-surface placeholder:text-[#6A7470]"
           />
           {searchQuery && (
             <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-secondary hover:text-on-surface p-0.5"><X className="w-3 h-3" /></button>
@@ -321,7 +321,7 @@ export default function PocketPanel({
 
         {hasFocus && (
           <button onClick={() => setOnlyRelevant(v => !v)} title={`Only spots relevant to ${focusedDayLabel || 'this day'}`}
-            className={`flex items-center gap-1 px-2 py-1.5 rounded-lg border text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${onlyRelevant ? 'bg-primary text-white border-primary' : 'bg-white text-secondary border-slate-200 hover:bg-slate-50'}`}>
+            className={`flex items-center gap-1 px-2 py-1.5 rounded-lg border text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${onlyRelevant ? 'bg-primary text-white border-primary' : 'bg-white text-secondary border-[#E4E2DE] hover:bg-[#F7F6F2]'}`}>
             <MapPin className="w-3.5 h-3.5" /><span className="hidden lg:inline">{focusedDayLabel || 'This day'}</span>
           </button>
         )}
@@ -335,14 +335,14 @@ export default function PocketPanel({
         {/* Sort (icon only) */}
         <div className="relative shrink-0">
           <button onClick={() => setOpenMenu(openMenu === 'sort' ? null : 'sort')} title={`Sort: ${SORT_LABEL[sortBy]}`}
-            className={`p-1.5 rounded-lg border bg-white transition-all cursor-pointer ${openMenu === 'sort' ? 'border-primary text-primary' : 'border-slate-200 text-secondary hover:bg-slate-50'}`}>
+            className={`p-1.5 rounded-lg border bg-white transition-all cursor-pointer ${openMenu === 'sort' ? 'border-primary text-primary' : 'border-[#E4E2DE] text-secondary hover:bg-[#F7F6F2]'}`}>
             <ArrowUpDown className="w-4 h-4" />
           </button>
           {openMenu === 'sort' && (
             <div className="absolute right-0 top-full mt-1.5 w-40 bg-white border border-border-subtle rounded-xl shadow-xl z-30 py-1 animate-fadeIn">
               {(['name', 'rating', 'category', 'area'] as const).map(s => (
                 <button key={s} onClick={() => { setSortBy(s); setOpenMenu(null); }}
-                  className={`w-full flex items-center justify-between px-3 py-1.5 text-xs hover:bg-slate-50 cursor-pointer ${sortBy === s ? 'text-primary font-bold' : 'text-on-surface-variant font-medium'}`}>
+                  className={`w-full flex items-center justify-between px-3 py-1.5 text-xs hover:bg-[#F7F6F2] cursor-pointer ${sortBy === s ? 'text-primary font-bold' : 'text-on-surface-variant font-medium'}`}>
                   {SORT_LABEL[s]} {sortBy === s && <Check className="w-3.5 h-3.5" />}
                 </button>
               ))}
@@ -353,7 +353,7 @@ export default function PocketPanel({
         {/* Filter (icon only · dot when active) */}
         <div className="relative shrink-0">
           <button onClick={() => setOpenMenu(openMenu === 'filter' ? null : 'filter')} title="Filter"
-            className={`relative p-1.5 rounded-lg border bg-white transition-all cursor-pointer ${activeFilters || openMenu === 'filter' ? 'border-primary text-primary' : 'border-slate-200 text-secondary hover:bg-slate-50'}`}>
+            className={`relative p-1.5 rounded-lg border bg-white transition-all cursor-pointer ${activeFilters || openMenu === 'filter' ? 'border-primary text-primary' : 'border-[#E4E2DE] text-secondary hover:bg-[#F7F6F2]'}`}>
             <Filter className="w-4 h-4" />
             {activeFilters > 0 && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary border border-white" />}
           </button>
@@ -365,12 +365,12 @@ export default function PocketPanel({
                   {/* Region — free-text (no list) */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5 h-4">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Region</span>
+                      <span className="text-[10px] font-bold text-[#6A7470] uppercase tracking-wider">Region</span>
                     </div>
                     <div className="relative">
                       <MapPin className="w-3.5 h-3.5 text-secondary absolute left-2 top-1/2 -translate-y-1/2" />
                       <input type="text" value={regionQuery} onChange={(e) => setRegionQuery(e.target.value)} placeholder="e.g. Kyoto…"
-                        className="w-full pl-7 pr-7 py-1.5 bg-slate-50 border border-slate-200 focus:border-primary/60 rounded-lg text-xs outline-none focus:ring-1 focus:ring-primary font-medium text-on-surface placeholder:text-slate-400" />
+                        className="w-full pl-7 pr-7 py-1.5 bg-[#F7F6F2] border border-[#E4E2DE] focus:border-primary/60 rounded-lg text-xs outline-none focus:ring-1 focus:ring-primary font-medium text-on-surface placeholder:text-[#6A7470]" />
                       {regionQuery && <button onClick={() => setRegionQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-secondary hover:text-on-surface p-0.5"><X className="w-3 h-3" /></button>}
                     </div>
                   </div>
@@ -378,7 +378,7 @@ export default function PocketPanel({
                   {/* Budget */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5 gap-1">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Budget</span>
+                      <span className="text-[10px] font-bold text-[#6A7470] uppercase tracking-wider">Budget</span>
                       <span className="text-[10px] font-bold text-on-surface-variant truncate">{BUDGET_LABEL[budgetRange[0]]}–{BUDGET_LABEL[budgetRange[1]]}</span>
                     </div>
                     <RangeBar min={0} max={BUDGET_MAX} step={1} lo={budgetRange[0]} hi={budgetRange[1]} onChange={setBudgetRange} />
@@ -387,7 +387,7 @@ export default function PocketPanel({
                   {/* Rating */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5 gap-1">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rating</span>
+                      <span className="text-[10px] font-bold text-[#6A7470] uppercase tracking-wider">Rating</span>
                       <span className="text-[10px] font-bold text-on-surface-variant flex items-center gap-0.5">{ratingRange[0].toFixed(1)}–{ratingRange[1].toFixed(1)}<Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500" /></span>
                     </div>
                     <RangeBar min={0} max={RATING_MAX} step={0.5} lo={ratingRange[0]} hi={ratingRange[1]} onChange={setRatingRange} />
@@ -395,10 +395,10 @@ export default function PocketPanel({
 
                   {/* Group by */}
                   <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Layers className="w-3 h-3" /> Group by</span>
+                    <span className="text-[10px] font-bold text-[#6A7470] uppercase tracking-wider flex items-center gap-1"><Layers className="w-3 h-3" /> Group by</span>
                     <div className="flex gap-1 mt-1.5">
                       {(['none', 'category', 'area'] as const).map(g => (
-                        <button key={g} onClick={() => setGroupBy(g)} className={`flex-1 px-0.5 py-1 rounded-md text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer ${groupBy === g ? 'bg-primary text-white' : 'bg-slate-50 text-secondary hover:bg-slate-100'}`}>
+                        <button key={g} onClick={() => setGroupBy(g)} className={`flex-1 px-0.5 py-1 rounded-md text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer ${groupBy === g ? 'bg-primary text-white' : 'bg-[#F7F6F2] text-secondary hover:bg-[#EDEBE7]'}`}>
                           {GROUP_LABEL[g]}
                         </button>
                       ))}
@@ -412,7 +412,7 @@ export default function PocketPanel({
                 {/* RIGHT — Category (each row expands to its sub-categories) */}
                 <div className="flex flex-col min-w-0">
                   <div className="flex items-center justify-between mb-1.5 h-4">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Category</span>
+                    <span className="text-[10px] font-bold text-[#6A7470] uppercase tracking-wider">Category</span>
                     {(selectedCategories.length > 0 || selectedSubs.length > 0) && (
                       <button onClick={() => { setSelectedCategories([]); setSelectedSubs([]); }} className="text-[10px] font-bold text-primary hover:underline cursor-pointer">Clear</button>
                     )}
@@ -424,7 +424,7 @@ export default function PocketPanel({
                       const expanded = expandedCats.includes(cat);
                       return (
                         <div key={cat}>
-                          <div className="flex items-center gap-1 px-1 py-1 rounded-md hover:bg-slate-50">
+                          <div className="flex items-center gap-1 px-1 py-1 rounded-md hover:bg-[#F7F6F2]">
                             <button onClick={() => toggle(selectedCategories, cat, setSelectedCategories)} className="flex items-center gap-1.5 flex-1 min-w-0 cursor-pointer">
                               <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${on ? 'bg-primary border-primary text-white' : 'border-slate-300'}`}>{on && <Check className="w-2.5 h-2.5" />}</span>
                               <span className="text-xs font-medium text-on-surface truncate">{catLabel(cat)}</span>
@@ -441,7 +441,7 @@ export default function PocketPanel({
                               {subs.map(([sub, sc]) => {
                                 const son = selectedSubs.includes(sub);
                                 return (
-                                  <button key={sub} onClick={() => toggle(selectedSubs, sub, setSelectedSubs)} className="flex items-center justify-between gap-1 px-1 py-0.5 rounded hover:bg-slate-50 cursor-pointer">
+                                  <button key={sub} onClick={() => toggle(selectedSubs, sub, setSelectedSubs)} className="flex items-center justify-between gap-1 px-1 py-0.5 rounded hover:bg-[#F7F6F2] cursor-pointer">
                                     <span className="flex items-center gap-1.5 min-w-0">
                                       <span className={`w-3 h-3 rounded border flex items-center justify-center shrink-0 ${son ? 'bg-primary border-primary text-white' : 'border-slate-300'}`}>{son && <Check className="w-2 h-2" />}</span>
                                       <span className="text-[11px] text-on-surface-variant truncate">{sub}</span>
@@ -509,7 +509,7 @@ export default function PocketPanel({
                   {placeSearchResults.map((place, idx) => (
                     <div 
                       key={idx} 
-                      className="flex items-center gap-2 p-2 bg-white hover:bg-slate-50 border border-slate-100 rounded-lg cursor-pointer transition-all group"
+                      className="flex items-center gap-2 p-2 bg-white hover:bg-[#F7F6F2] border border-[#E4E2DE] rounded-lg cursor-pointer transition-all group"
                       onClick={() => handleAddFoundPlace(place)}
                     >
                       <div className="w-10 h-10 rounded-md overflow-hidden bg-slate-100 shrink-0">
@@ -517,7 +517,7 @@ export default function PocketPanel({
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold text-on-surface truncate leading-tight">{place.title}</p>
-                        <p className="text-[10px] text-slate-400 font-medium truncate">{place.area}</p>
+                        <p className="text-[10px] text-[#6A7470] font-medium truncate">{place.area}</p>
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
                          <div className="flex items-center gap-0.5 text-amber-500 font-bold text-[10px]">
@@ -543,7 +543,7 @@ export default function PocketPanel({
               
               <div className="grid grid-cols-2 gap-2">
                 <div className="col-span-2">
-                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Place Name</label>
+                  <label className="text-[9px] font-bold text-[#6A7470] uppercase tracking-wider mb-1 block">Place Name</label>
                   <input
                     type="text"
                     placeholder="e.g., Kinkaku-ji"
@@ -553,7 +553,7 @@ export default function PocketPanel({
                   />
                 </div>
                 <div>
-                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Category</label>
+                  <label className="text-[9px] font-bold text-[#6A7470] uppercase tracking-wider mb-1 block">Category</label>
                   <select 
                     value={manualForm.category}
                     onChange={(e) => setManualForm({...manualForm, category: e.target.value as any})}
@@ -565,7 +565,7 @@ export default function PocketPanel({
                   </select>
                 </div>
                 <div>
-                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Area</label>
+                  <label className="text-[9px] font-bold text-[#6A7470] uppercase tracking-wider mb-1 block">Area</label>
                   <input
                     type="text"
                     placeholder="e.g., Kyoto"
@@ -575,7 +575,7 @@ export default function PocketPanel({
                   />
                 </div>
                 <div>
-                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Tags / Sub</label>
+                  <label className="text-[9px] font-bold text-[#6A7470] uppercase tracking-wider mb-1 block">Tags / Sub</label>
                   <input
                     type="text"
                     placeholder="e.g., Temple"
@@ -585,7 +585,7 @@ export default function PocketPanel({
                   />
                 </div>
                 <div>
-                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Opening Hours</label>
+                  <label className="text-[9px] font-bold text-[#6A7470] uppercase tracking-wider mb-1 block">Opening Hours</label>
                   <input
                     type="text"
                     placeholder="e.g., 9AM - 5PM"
@@ -680,7 +680,7 @@ export default function PocketPanel({
                       >
                         <div className="flex items-center justify-between w-full gap-1">
                           <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                            <div className="w-11 h-11 rounded-lg overflow-hidden shrink-0 border border-slate-100 shadow-sm bg-slate-50">
+                            <div className="w-11 h-11 rounded-lg overflow-hidden shrink-0 border border-[#E4E2DE] shadow-sm bg-[#F7F6F2]">
                               <img
                                 src={item.imageUrl || `https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?q=80&w=150&auto=format&fit=crop`}
                                 alt={item.title}
@@ -701,11 +701,11 @@ export default function PocketPanel({
                                     <span className="inline-flex items-center align-middle mr-1 px-1 py-0.5 rounded bg-success/10 text-success text-[8px] font-bold uppercase tracking-wide" title="Reservation made">Booked</span>
                                   )}
                                   {statusTags(item).includes('backup') && (
-                                    <span className="inline-flex items-center align-middle mr-1 px-1 py-0.5 rounded bg-slate-100 text-secondary text-[8px] font-bold uppercase tracking-wide" title="Optional / fallback">Backup</span>
+                                    <span className="inline-flex items-center align-middle mr-1 px-1 py-0.5 rounded bg-[#EDEBE7] text-secondary text-[8px] font-bold uppercase tracking-wide" title="Optional / fallback">Backup</span>
                                   )}
                                   {item.title}
                                 </p>
-                                <div className="text-[10px] text-slate-500 font-medium mt-0.5 flex items-center gap-1.5 leading-tight">
+                                <div className="text-[10px] text-[#6A7470] font-medium mt-0.5 flex items-center gap-1.5 leading-tight">
                                   {item.rating && (
                                     <span className="flex items-center gap-0.5 text-amber-500 font-bold">
                                       <Star className="w-2.5 h-2.5 fill-amber-500" /> {item.rating}
@@ -719,7 +719,7 @@ export default function PocketPanel({
                                     <span className="flex items-center gap-1"><MapPin className="w-2.5 h-2.5" />{item.area}</span>
                                   )}
                                 </div>
-                                <div className="text-[10px] text-slate-400 font-medium mt-0.5 flex items-center gap-1.5 leading-tight">
+                                <div className="text-[10px] text-[#6A7470] font-medium mt-0.5 flex items-center gap-1.5 leading-tight">
                                   {item.subCategory && <span className="flex items-center gap-1"><Tag className="w-2.5 h-2.5" />{item.subCategory}</span>}
                                   {item.subCategory && item.budget && <span className="opacity-40">•</span>}
                                   {item.budget && <span className="text-primary font-bold">{item.budget}</span>}
@@ -733,7 +733,7 @@ export default function PocketPanel({
                                 e.stopPropagation();
                                 onRemovePocketItem?.(item.id);
                               }}
-                              className="p-0.5 rounded-md hover:bg-black/5 opacity-40 hover:opacity-100 text-slate-500 hover:text-red-500 transition-all cursor-pointer shrink-0"
+                              className="p-0.5 rounded-md hover:bg-black/5 opacity-40 hover:opacity-100 text-[#6A7470] hover:text-red-500 transition-all cursor-pointer shrink-0"
                               title="Remove from Bucket List"
                             >
                               <X className="w-3.5 h-3.5" />
@@ -767,8 +767,8 @@ export default function PocketPanel({
                   })}
 
                   {col.items.length === 0 && (
-                    <div className="py-6 text-center border border-dashed border-slate-100 rounded-xl bg-slate-50/50">
-                      <p className="text-[11px] text-slate-400 font-medium">No items in this category</p>
+                    <div className="py-6 text-center border border-dashed border-[#E4E2DE] rounded-[8px] bg-[#F7F6F2]/50">
+                      <p className="text-[11px] text-[#6A7470] font-medium">No items in this category</p>
                     </div>
                   )}
                 </div>

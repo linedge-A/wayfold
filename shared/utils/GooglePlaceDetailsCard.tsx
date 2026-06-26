@@ -103,9 +103,9 @@ export default function GooglePlaceDetailsCard({
 
   if (loading) {
     return (
-      <div className="mt-3 p-4 bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center py-6 gap-2">
+      <div className="mt-3 p-4 bg-[#F7F6F2] border border-[#E4E2DE] rounded-[8px] flex flex-col items-center justify-center py-6 gap-2">
         <Loader2 className="w-5 h-5 text-primary animate-spin" />
-        <span className="text-[10px] text-slate-500 font-medium">Fetching real-time Google Maps details...</span>
+        <span className="text-[10px] text-[#6A7470] font-medium">Fetching real-time Google Maps details...</span>
       </div>
     );
   }
@@ -120,10 +120,10 @@ export default function GooglePlaceDetailsCard({
     : '';
 
   return (
-    <div className="mt-3 bg-slate-50 border border-slate-150 rounded-xl overflow-hidden shadow-inner flex flex-col">
+    <div className="mt-3 bg-[#F7F6F2] border border-slate-150 rounded-[8px] overflow-hidden shadow-inner flex flex-col">
       {/* Visual cover header if photo is available */}
       {place.photoUrl && (
-        <div className="h-24 w-full relative overflow-hidden bg-slate-200">
+        <div className="h-24 w-full relative overflow-hidden bg-[#E4E2DE]">
           <img 
             src={place.photoUrl} 
             alt={place.displayName} 
@@ -140,7 +140,7 @@ export default function GooglePlaceDetailsCard({
         </div>
       )}
 
-      <div className="p-3 space-y-2.5 text-xs text-slate-700">
+      <div className="p-3 space-y-2.5 text-xs text-[#6A7470]">
         {!place.photoUrl && (
           <div className="flex items-center gap-1.5 border-b border-slate-200 pb-1.5 mb-1">
             <span className="text-[9px] font-bold text-white uppercase bg-blue-600/90 px-1.5 py-0.5 rounded tracking-wide">
@@ -156,7 +156,7 @@ export default function GooglePlaceDetailsCard({
               <Star className="w-3 h-3 fill-amber-500 text-amber-500 shrink-0" />
               <span>{place.rating}</span>
             </div>
-            <span className="text-[10px] text-slate-400 font-semibold">
+            <span className="text-[10px] text-[#6A7470] font-semibold">
               ({place.userRatingCount?.toLocaleString()} Google reviews)
             </span>
           </div>
@@ -164,17 +164,17 @@ export default function GooglePlaceDetailsCard({
 
         {/* Editorial Summary */}
         {place.summary && (
-          <p className="text-[10px] text-slate-600 leading-normal italic bg-white p-2 rounded-lg border border-slate-100 flex gap-1.5 items-start">
-            <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+          <p className="text-[10px] text-[#6A7470] leading-normal italic bg-white p-2 rounded-lg border border-[#E4E2DE] flex gap-1.5 items-start">
+            <FileText className="w-3.5 h-3.5 text-[#6A7470] shrink-0 mt-0.5" />
             <span>"{place.summary}"</span>
           </p>
         )}
 
-        <div className="grid grid-cols-1 gap-1.5 text-[10px] font-medium text-slate-600">
+        <div className="grid grid-cols-1 gap-1.5 text-[10px] font-medium text-[#6A7470]">
           {/* Real Address */}
           {place.formattedAddress && (
             <div className="flex items-start gap-1.5 leading-snug">
-              <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+              <MapPin className="w-3.5 h-3.5 text-[#6A7470] shrink-0 mt-0.5" />
               <span className="truncate" title={place.formattedAddress}>{place.formattedAddress}</span>
             </div>
           )}
@@ -182,7 +182,7 @@ export default function GooglePlaceDetailsCard({
           {/* Real Contact No */}
           {place.nationalPhoneNumber && (
             <div className="flex items-center gap-1.5">
-              <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <Phone className="w-3.5 h-3.5 text-[#6A7470] shrink-0" />
               <span>{place.nationalPhoneNumber}</span>
             </div>
           )}
@@ -190,9 +190,9 @@ export default function GooglePlaceDetailsCard({
           {/* Real Opening hours today (Short version as requested!) */}
           {place.todayHours && (
             <div className="flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <Clock className="w-3.5 h-3.5 text-[#6A7470] shrink-0" />
               <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-slate-700">Today: {shortHours}</span>
+                <span className="font-semibold text-[#6A7470]">Today: {shortHours}</span>
                 {place.isOpen !== null && (
                   <span className={`text-[9px] font-bold px-1 rounded-sm ${
                     place.isOpen 
@@ -209,17 +209,17 @@ export default function GooglePlaceDetailsCard({
 
         {/* Dynamic Budget, Duration and Reservation details */}
         {(budget || estimatedDurationMin || reservable) && (
-          <div className="flex flex-wrap gap-1.5 pt-2.5 border-t border-slate-200/65 font-medium text-[10px] text-slate-600">
+          <div className="flex flex-wrap gap-1.5 pt-2.5 border-t border-slate-200/65 font-medium text-[10px] text-[#6A7470]">
             {budget && (
-              <div className="flex items-center gap-1 bg-slate-100/90 border border-slate-200/40 px-2 py-0.5 rounded-md">
-                <span className="text-slate-500">💰 Budget:</span>
-                <span className="font-bold text-slate-800">{budget}</span>
+              <div className="flex items-center gap-1 bg-[#EDEBE7]/90 border border-[#E4E2DE]/40 px-2 py-0.5 rounded-md">
+                <span className="text-[#6A7470]">💰 Budget:</span>
+                <span className="font-bold text-[#36453F]">{budget}</span>
               </div>
             )}
 
             {estimatedDurationMin && (
               <div className="flex items-center gap-1 bg-blue-50/80 border border-blue-100/40 px-2 py-0.5 rounded-md">
-                <span className="text-slate-500">⏰ Stay:</span>
+                <span className="text-[#6A7470]">⏰ Stay:</span>
                 <span className="font-bold text-blue-700">
                   {estimatedDurationMin >= 60 
                     ? `${Math.floor(estimatedDurationMin / 60)}h${estimatedDurationMin % 60 > 0 ? ` ${estimatedDurationMin % 60}m` : ''}` 
@@ -230,7 +230,7 @@ export default function GooglePlaceDetailsCard({
 
             {reservable && (
               <div className="flex items-center gap-1 bg-orange-50/85 border border-orange-100/50 px-2 py-0.5 rounded-md">
-                <span className="text-slate-500">🛎️ Booking:</span>
+                <span className="text-[#6A7470]">🛎️ Booking:</span>
                 <span className="font-bold text-orange-700">Advised</span>
               </div>
             )}
@@ -245,7 +245,7 @@ export default function GooglePlaceDetailsCard({
               target="_blank"
               rel="noopener noreferrer"
               referrerPolicy="no-referrer"
-              className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-md text-[9px] font-bold text-primary hover:text-accent-primary flex items-center gap-1 transition-all"
+              className="px-2 py-1 bg-white hover:bg-[#EDEBE7] border border-[#E4E2DE] rounded-md text-[9px] font-bold text-primary hover:text-accent-primary flex items-center gap-1 transition-all"
             >
               <Globe className="w-2.5 h-2.5" />
               Official Website

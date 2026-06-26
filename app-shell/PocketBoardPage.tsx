@@ -89,7 +89,7 @@ export default function PocketBoardPage({
         className="w-3 hover:w-4 flex items-center justify-center cursor-col-resize group self-stretch select-none shrink-0 transition-all"
         title="Drag to resize · double-click to reset"
       >
-        <div className="w-1 h-12 rounded-full bg-slate-200 group-hover:bg-primary/50 group-active:bg-primary transition-all pointer-events-none" />
+        <div className="w-1 h-12 rounded-full bg-[#E4E2DE] group-hover:bg-primary/50 group-active:bg-primary transition-all pointer-events-none" />
       </div>
 
       {/* Map — RIGHT, fills the rest. All saved spots as markers (no day route). */}

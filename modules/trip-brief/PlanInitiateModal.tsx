@@ -77,7 +77,7 @@ export default function PlanInitiateModal({ isOpen, onClose, onStartPlanning, po
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+          className="relative w-full max-w-lg bg-white rounded-[8px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
         >
           {/* Header */}
           <div className="px-6 py-5 border-b border-border-subtle flex items-center justify-between bg-white shrink-0">
@@ -87,10 +87,10 @@ export default function PlanInitiateModal({ isOpen, onClose, onStartPlanning, po
               </div>
               <div>
                 <h2 className="text-lg font-bold text-on-surface tracking-tight leading-tight">Start Your Journey</h2>
-                <p className="text-[11px] text-slate-400 font-medium uppercase tracking-widest mt-0.5">Let's craft your perfect itinerary</p>
+                <p className="text-[11px] text-[#6A7470] font-medium uppercase tracking-widest mt-0.5">Let's craft your perfect itinerary</p>
               </div>
             </div>
-            <button onClick={handleClose} className="p-2 hover:bg-slate-50 rounded-full transition-colors text-secondary cursor-pointer">
+            <button onClick={handleClose} className="p-2 hover:bg-[#F7F6F2] rounded-[10px] transition-colors text-secondary cursor-pointer">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -100,7 +100,7 @@ export default function PlanInitiateModal({ isOpen, onClose, onStartPlanning, po
             <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-6">
               {/* Destinations */}
               <div className="space-y-3">
-                <label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                <label className="flex items-center gap-2 text-xs font-bold text-[#6A7470] uppercase tracking-wider">
                   <MapPin className="w-3.5 h-3.5" /> Destinations
                 </label>
                 <div className="space-y-2">
@@ -111,10 +111,10 @@ export default function PlanInitiateModal({ isOpen, onClose, onStartPlanning, po
                         placeholder={index === 0 ? "Where are you heading?" : "Next stop..."}
                         value={dest}
                         onChange={(e) => handleDestinationChange(index, e.target.value)}
-                        className="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-slate-400"
+                        className="flex-1 px-4 py-2 bg-[#F7F6F2] border border-[#E4E2DE] rounded-[8px] text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-[#6A7470]"
                       />
                       {destinations.length > 1 && (
-                        <button onClick={() => handleRemoveDestination(index)} className="p-2 text-slate-300 hover:text-red-500 transition-colors">
+                        <button onClick={() => handleRemoveDestination(index)} className="p-2 text-[#D9DDD8] hover:text-red-500 transition-colors">
                           <X className="w-4 h-4" />
                         </button>
                       )}
@@ -122,7 +122,7 @@ export default function PlanInitiateModal({ isOpen, onClose, onStartPlanning, po
                   ))}
                   <button
                     onClick={handleAddDestination}
-                    className="w-full py-2 border border-dashed border-slate-300 rounded-xl text-xs font-bold text-slate-400 hover:text-primary hover:border-primary/50 hover:bg-primary-soft transition-all flex items-center justify-center gap-1.5 cursor-pointer mt-1"
+                    className="w-full py-2 border border-dashed border-slate-300 rounded-[8px] text-xs font-bold text-[#6A7470] hover:text-primary hover:border-primary/50 hover:bg-primary-soft transition-all flex items-center justify-center gap-1.5 cursor-pointer mt-1"
                   >
                     <Plus className="w-3.5 h-3.5" /> Add another city
                   </button>
@@ -131,27 +131,27 @@ export default function PlanInitiateModal({ isOpen, onClose, onStartPlanning, po
 
               {/* Dates */}
               <div className="space-y-3">
-                <label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                <label className="flex items-center gap-2 text-xs font-bold text-[#6A7470] uppercase tracking-wider">
                   <Calendar className="w-3.5 h-3.5" /> Travel Dates
                 </label>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-[10px] font-bold text-slate-400 mb-1 ml-1">Start</p>
+                    <p className="text-[10px] font-bold text-[#6A7470] mb-1 ml-1">Start</p>
                     <input type="date" value={dateRange.start} onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+                      className="w-full px-4 py-2 bg-[#F7F6F2] border border-[#E4E2DE] rounded-[8px] text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold text-slate-400 mb-1 ml-1">End</p>
+                    <p className="text-[10px] font-bold text-[#6A7470] mb-1 ml-1">End</p>
                     <input type="date" value={dateRange.end} onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+                      className="w-full px-4 py-2 bg-[#F7F6F2] border border-[#E4E2DE] rounded-[8px] text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
                   </div>
                 </div>
-                <p className="text-[10px] text-slate-400 font-medium italic px-1">Leave dates blank for a flexible-length plan.</p>
+                <p className="text-[10px] text-[#6A7470] font-medium italic px-1">Leave dates blank for a flexible-length plan.</p>
               </div>
 
               {/* Pace & Style */}
               <div className="space-y-3">
-                <label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                <label className="flex items-center gap-2 text-xs font-bold text-[#6A7470] uppercase tracking-wider">
                   <Gauge className="w-3.5 h-3.5" /> Pace &amp; Style
                 </label>
                 <div className="flex flex-wrap gap-2">
@@ -160,39 +160,39 @@ export default function PlanInitiateModal({ isOpen, onClose, onStartPlanning, po
                       key={s.id}
                       onClick={() => setStyle(s.id)}
                       title={s.hint}
-                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                      className={`px-3.5 py-2 rounded-[10px] text-xs font-bold transition-all cursor-pointer border ${
                         style === s.id
                           ? 'bg-primary text-white border-primary shadow-md shadow-primary/20'
-                          : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-primary/40 hover:text-primary'
+                          : 'bg-[#F7F6F2] text-[#6A7470] border-[#E4E2DE] hover:border-primary/40 hover:text-primary'
                       }`}
                     >
                       {s.label}
                     </button>
                   ))}
                 </div>
-                <p className="text-[10px] text-slate-400 font-medium italic px-1">
+                <p className="text-[10px] text-[#6A7470] font-medium italic px-1">
                   {STYLES.find(s => s.id === style)?.hint} — sets how many stops fit each day.
                 </p>
               </div>
 
               {/* Group Size */}
               <div className="space-y-3">
-                <label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                <label className="flex items-center gap-2 text-xs font-bold text-[#6A7470] uppercase tracking-wider">
                   <Users className="w-3.5 h-3.5" /> Travelers
                 </label>
                 <div className="grid grid-cols-2 gap-4">
                   {([['Adults', 'Ages 13+', 'adults', 1], ['Children', 'Ages 2-12', 'children', 0]] as const).map(([label, sub, key, min]) => (
-                    <div key={key} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-2xl">
+                    <div key={key} className="flex items-center justify-between p-3 bg-[#F7F6F2] border border-[#E4E2DE] rounded-[8px]">
                       <div>
                         <p className="text-xs font-bold text-on-surface">{label}</p>
-                        <p className="text-[10px] text-slate-400 font-medium">{sub}</p>
+                        <p className="text-[10px] text-[#6A7470] font-medium">{sub}</p>
                       </div>
                       <div className="flex items-center gap-3">
                         <button onClick={() => setGroupSize({ ...groupSize, [key]: Math.max(min, groupSize[key] - 1) })}
-                          className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center hover:bg-white transition-colors cursor-pointer">-</button>
+                          className="w-7 h-7 rounded-[8px] border border-[#E4E2DE] flex items-center justify-center hover:bg-white transition-colors cursor-pointer">-</button>
                         <span className="text-sm font-bold w-4 text-center">{groupSize[key]}</span>
                         <button onClick={() => setGroupSize({ ...groupSize, [key]: groupSize[key] + 1 })}
-                          className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center hover:bg-white transition-colors cursor-pointer">+</button>
+                          className="w-7 h-7 rounded-[8px] border border-[#E4E2DE] flex items-center justify-center hover:bg-white transition-colors cursor-pointer">+</button>
                       </div>
                     </div>
                   ))}
@@ -201,15 +201,15 @@ export default function PlanInitiateModal({ isOpen, onClose, onStartPlanning, po
 
               {/* Notes */}
               <div className="space-y-3">
-                <label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                <label className="flex items-center gap-2 text-xs font-bold text-[#6A7470] uppercase tracking-wider">
                   <MessageSquare className="w-3.5 h-3.5" /> Dreams &amp; Details
                 </label>
                 <textarea
                   placeholder="What are you most excited for? Any specific interests, diet requirements, or must-haves for this trip?"
                   value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-slate-400 resize-none"
+                  className="w-full px-4 py-3 bg-[#F7F6F2] border border-[#E4E2DE] rounded-[8px] text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-[#6A7470] resize-none"
                 />
-                <p className="text-[10px] text-slate-400 font-medium italic mt-1 px-1">Hint: Mention interests like "Local ramen hunting" or "Zen temples".</p>
+                <p className="text-[10px] text-[#6A7470] font-medium italic mt-1 px-1">Hint: Mention interests like "Local ramen hunting" or "Zen temples".</p>
               </div>
             </div>
           )}
@@ -217,12 +217,12 @@ export default function PlanInitiateModal({ isOpen, onClose, onStartPlanning, po
           {/* ── GENERATING ── */}
           {phase === 'generating' && (
             <div className="p-10 flex flex-col items-center justify-center gap-4 text-center min-h-[280px]">
-              <div className="w-14 h-14 rounded-2xl bg-primary-soft flex items-center justify-center">
+              <div className="w-14 h-14 rounded-[8px] bg-primary-soft flex items-center justify-center">
                 <Loader2 className="w-7 h-7 text-primary animate-spin" />
               </div>
               <div>
                 <p className="text-base font-bold text-on-surface">Crafting your itinerary…</p>
-                <p className="text-xs text-slate-400 font-medium mt-1">Clustering by area and routing to avoid backtracking</p>
+                <p className="text-xs text-[#6A7470] font-medium mt-1">Clustering by area and routing to avoid backtracking</p>
               </div>
             </div>
           )}
@@ -231,11 +231,11 @@ export default function PlanInitiateModal({ isOpen, onClose, onStartPlanning, po
           {phase === 'done' && result && (
             <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-5">
               <div className="flex flex-col items-center text-center gap-2">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center">
+                <div className="w-12 h-12 rounded-[8px] bg-emerald-50 flex items-center justify-center">
                   <Check className="w-6 h-6 text-emerald-500" />
                 </div>
                 <h3 className="text-base font-bold text-on-surface">Your itinerary is ready</h3>
-                <p className="text-xs text-slate-400 font-medium">
+                <p className="text-xs text-[#6A7470] font-medium">
                   {result.itineraryDays.length} days · {totalStops} stops · {result.brief.destination}
                 </p>
               </div>
@@ -248,18 +248,18 @@ export default function PlanInitiateModal({ isOpen, onClose, onStartPlanning, po
 
               <div className="space-y-2">
                 {result.itineraryDays.map((d) => (
-                  <div key={d.id} className="flex items-center justify-between px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl">
+                  <div key={d.id} className="flex items-center justify-between px-4 py-3 bg-[#F7F6F2] border border-[#E4E2DE] rounded-[8px]">
                     <div className="flex items-center gap-3 min-w-0">
                       <span className="text-xs font-bold text-primary shrink-0">{d.label}</span>
                       <span className="text-sm font-bold text-on-surface truncate">{d.areaSummary ?? 'Mixed'}</span>
                     </div>
-                    <span className="text-[11px] font-medium text-slate-400 shrink-0">{d.items.length} stops</span>
+                    <span className="text-[11px] font-medium text-[#6A7470] shrink-0">{d.items.length} stops</span>
                   </div>
                 ))}
               </div>
 
               {result.pocket.length > 0 && (
-                <p className="text-[11px] text-slate-400 font-medium italic px-1">
+                <p className="text-[11px] text-[#6A7470] font-medium italic px-1">
                   {result.pocket.length} extra idea{result.pocket.length > 1 ? 's' : ''} saved to your Pocket.
                 </p>
               )}
@@ -267,30 +267,30 @@ export default function PlanInitiateModal({ isOpen, onClose, onStartPlanning, po
           )}
 
           {/* Footer */}
-          <div className="p-6 border-t border-border-subtle bg-slate-50 shrink-0">
+          <div className="p-6 border-t border-border-subtle bg-[#F7F6F2] shrink-0">
             {phase === 'form' && (
               <button
                 onClick={handleGenerate}
                 disabled={!destinations[0]?.trim()}
-                className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-sm shadow-xl shadow-primary/30 hover:bg-accent-primary-hover active:scale-[0.98] transition-all disabled:opacity-50 disabled:shadow-none cursor-pointer flex items-center justify-center gap-2 group"
+                className="w-full py-4 bg-primary text-white rounded-[10px] font-bold text-sm shadow-md shadow-primary/30 hover:bg-accent-primary-hover active:scale-[0.98] transition-all disabled:opacity-50 disabled:shadow-none cursor-pointer flex items-center justify-center gap-2 group"
               >
                 Generate Itinerary
                 <Sparkles className="w-4 h-4 group-hover:scale-125 transition-transform" />
               </button>
             )}
             {phase === 'generating' && (
-              <button disabled className="w-full py-4 bg-primary/70 text-white rounded-2xl font-bold text-sm cursor-wait flex items-center justify-center gap-2">
+              <button disabled className="w-full py-4 bg-primary/70 text-white rounded-[10px] font-bold text-sm cursor-wait flex items-center justify-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin" /> Generating…
               </button>
             )}
             {phase === 'done' && result && (
               <div className="flex gap-3">
-                <button onClick={handleReset} className="px-5 py-4 rounded-2xl font-bold text-sm text-slate-500 bg-white border border-slate-200 hover:bg-slate-50 transition-all cursor-pointer">
+                <button onClick={handleReset} className="px-5 py-4 rounded-[10px] font-bold text-sm text-[#6A7470] bg-white border border-[#E4E2DE] hover:bg-[#F7F6F2] transition-all cursor-pointer">
                   Tweak
                 </button>
                 <button
                   onClick={() => { onStartPlanning(result); handleReset(); }}
-                  className="flex-1 py-4 bg-primary text-white rounded-2xl font-bold text-sm shadow-xl shadow-primary/30 hover:bg-accent-primary-hover active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2 group"
+                  className="flex-1 py-4 bg-primary text-white rounded-[10px] font-bold text-sm shadow-md shadow-primary/30 hover:bg-accent-primary-hover active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2 group"
                 >
                   View Itinerary
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />

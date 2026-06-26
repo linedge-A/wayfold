@@ -216,10 +216,10 @@ export default function CopilotPanel({
   };
 
   return (
-    <aside className="w-full h-full bg-white border border-border-subtle rounded-2xl overflow-hidden shadow-sm flex flex-col">
+    <aside className="w-full h-full bg-white border border-border-subtle rounded-[8px] overflow-hidden shadow-sm flex flex-col">
       {/* Travel Notes Section */}
       <div className="border-b border-border-subtle bg-white flex flex-col shrink-0 relative">
-        <div className="flex items-center px-3 py-2 hover:bg-slate-100/40 transition-colors select-none">
+        <div className="flex items-center px-3 py-2 hover:bg-[#EDEBE7]/40 transition-colors select-none">
           <div 
             onClick={() => setIsNotesFolded(!isNotesFolded)}
             className="flex items-center gap-2 flex-1 cursor-pointer"
@@ -316,7 +316,7 @@ export default function CopilotPanel({
                   
                   <button
                     onClick={(e) => handleDeleteNote(note.id, e)}
-                    className="absolute top-2 right-2 w-4 h-4 bg-slate-50 text-secondary hover:bg-amber-100 hover:text-warning rounded-full flex items-center justify-center border border-border-subtle opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                    className="absolute top-2 right-2 w-4 h-4 bg-[#F7F6F2] text-secondary hover:bg-amber-100 hover:text-warning rounded-full flex items-center justify-center border border-border-subtle opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                   >
                     <X className="w-2 h-2" />
                   </button>
