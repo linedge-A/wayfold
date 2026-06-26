@@ -311,11 +311,15 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
           {isPins && mapItems.map((item) => {
             const isSelected = selectedItemId === item.id;
             const isHovered = hoveredItemId === item.id;
-            const categoryColor = item.category === 'food' ? '#F2994A' :
-                                item.category === 'sight' ? '#2F80ED' :
-                                item.category === 'stay' ? '#9B51E0' :
-                                item.category === 'transit' ? '#27AE60' : '#3B82F6';
-            
+            const CAT_COLORS: Record<string, { border: string; text: string; tint: string }> = {
+              sight:   { border: '#4A76A8', text: '#355888', tint: '#EAF0F8' },
+              food:    { border: '#A06820', text: '#8A5A12', tint: '#F8EEDC' },
+              stay:    { border: '#7A5068', text: '#5C3E4D', tint: '#F1E9EE' },
+              transit: { border: '#4E6B57', text: '#2F5D3A', tint: '#E7F3EA' },
+              booking: { border: '#B0532E', text: '#8A3A2E', tint: '#F8EDEA' },
+            };
+            const catStyle = CAT_COLORS[item.category] ?? { border: '#8A9490', text: '#6A7470', tint: '#EDEBE7' };
+
             return (
               <AdvancedMarker
                 key={item.id}
@@ -328,19 +332,14 @@ export default function MapPanel({ items, selectedItemId, hoveredItemId, onSelec
                   onMouseEnter={() => onHoverItem?.(item.id)}
                   onMouseLeave={() => onHoverItem?.(undefined)}
                 >
-                  {isSelected && (
-                    <div
-                      className="absolute inset-0 w-9 h-9 rounded-full -translate-x-[2px] -translate-y-[2px]"
-                      style={{ backgroundColor: `${categoryColor}33` }}
-                    />
-                  )}
                   <div
-                    className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm border-[3px] shadow-lg transition-all duration-150 bg-white ${
-                      isSelected ? 'scale-110' : isHovered ? 'scale-110 ring-2 ring-primary/50' : 'hover:scale-105'
+                    className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm border-[3px] shadow-lg transition-all duration-150 ${
+                      isSelected ? 'scale-110' : isHovered ? 'scale-110' : 'hover:scale-105'
                     }`}
                     style={{
-                      borderColor: categoryColor,
-                      color: categoryColor
+                      borderColor: catStyle.border,
+                      color: catStyle.text,
+                      backgroundColor: isSelected ? catStyle.tint : '#FFFFFF',
                     }}
                   >
                     {item.indexOrder}

@@ -97,54 +97,54 @@ const getDistanceAndDuration = (item1: any, item2: any) => {
 };
 
 const getCategoryCardStyles = (cat: string, isSelected: boolean) => {
-  let bg = 'bg-[#F7F6F2]';
-  let border = 'border-[#E4E2DE]';
-  let borderLeft = 'border-l-4 border-l-slate-400';
-  let text = 'text-[#36453F]';
-  let labelBg = 'bg-[#E4E2DE]/50 text-[#6A7470]';
+  let bg = 'bg-[#EDEBE7]';
+  let border = 'border-[#D9DDD8]';
+  let borderLeft = 'border-l-4 border-l-[#8A9490]';
+  let text = 'text-[#6A7470]';
+  let labelBg = 'bg-[#D9DDD8]/40 text-[#6A7470]';
 
   switch (cat) {
     case 'sight':
-      bg = isSelected ? 'bg-blue-50/95' : 'bg-[#F2F7FE]';
-      border = isSelected ? 'border-blue-400' : 'border-[#2F80ED]/15';
-      borderLeft = 'border-l-4 border-l-[#2F80ED]';
-      text = 'text-[#1F5BB0]';
-      labelBg = 'bg-[#2F80ED]/10 text-[#2F80ED]';
+      bg = isSelected ? 'bg-[#DDEAF8]' : 'bg-[#EAF0F8]';
+      border = isSelected ? 'border-[#BDD0EA]' : 'border-[#BDD0EA]';
+      borderLeft = 'border-l-4 border-l-[#4A76A8]';
+      text = 'text-[#355888]';
+      labelBg = 'bg-[#BDD0EA]/40 text-[#355888]';
       break;
     case 'food':
-      bg = isSelected ? 'bg-orange-50/95' : 'bg-[#FFF9F3]';
-      border = isSelected ? 'border-orange-400' : 'border-[#F2994A]/15';
-      borderLeft = 'border-l-4 border-l-[#F2994A]';
-      text = 'text-[#C56C1B]';
-      labelBg = 'bg-[#F2994A]/10 text-[#F2994A]';
+      bg = isSelected ? 'bg-[#F0E4CC]' : 'bg-[#F8EEDC]';
+      border = isSelected ? 'border-[#DEC79A]' : 'border-[#DEC79A]';
+      borderLeft = 'border-l-4 border-l-[#A06820]';
+      text = 'text-[#8A5A12]';
+      labelBg = 'bg-[#DEC79A]/40 text-[#8A5A12]';
       break;
     case 'stay':
-      bg = isSelected ? 'bg-purple-50/95' : 'bg-[#FAF5FF]';
-      border = isSelected ? 'border-purple-400' : 'border-[#9B51E0]/15';
-      borderLeft = 'border-l-4 border-l-[#9B51E0]';
-      text = 'text-[#7D38C0]';
-      labelBg = 'bg-[#9B51E0]/10 text-[#9B51E0]';
+      bg = isSelected ? 'bg-[#E8DDE5]' : 'bg-[#F1E9EE]';
+      border = isSelected ? 'border-[#CDB9C5]' : 'border-[#CDB9C5]';
+      borderLeft = 'border-l-4 border-l-[#7A5068]';
+      text = 'text-[#5C3E4D]';
+      labelBg = 'bg-[#CDB9C5]/40 text-[#5C3E4D]';
       break;
     case 'transit':
-      bg = isSelected ? 'bg-green-50/95' : 'bg-[#F3FCF6]';
-      border = isSelected ? 'border-green-400' : 'border-[#27AE60]/15';
-      borderLeft = 'border-l-4 border-l-[#27AE60]';
-      text = 'text-[#1C8C4B]';
-      labelBg = 'bg-[#27AE60]/10 text-[#27AE60]';
+      bg = isSelected ? 'bg-[#D6EBD9]' : 'bg-[#E7F3EA]';
+      border = isSelected ? 'border-[#B7D3BE]' : 'border-[#B7D3BE]';
+      borderLeft = 'border-l-4 border-l-[#4E6B57]';
+      text = 'text-[#2F5D3A]';
+      labelBg = 'bg-[#B7D3BE]/40 text-[#2F5D3A]';
       break;
     case 'booking':
-      bg = isSelected ? 'bg-red-50/95' : 'bg-[#FFF5F5]';
-      border = isSelected ? 'border-red-400' : 'border-[#EB5757]/15';
-      borderLeft = 'border-l-4 border-l-[#EB5757]';
-      text = 'text-[#C93B3B]';
-      labelBg = 'bg-[#EB5757]/10 text-[#EB5757]';
+      bg = isSelected ? 'bg-[#F0E2DD]' : 'bg-[#F8EDEA]';
+      border = isSelected ? 'border-[#DDBDB5]' : 'border-[#DDBDB5]';
+      borderLeft = 'border-l-4 border-l-[#B0532E]';
+      text = 'text-[#8A3A2E]';
+      labelBg = 'bg-[#DDBDB5]/40 text-[#8A3A2E]';
       break;
     default:
-      bg = isSelected ? 'bg-[#F7F6F2]/95' : 'bg-[#F8F9FA]';
-      border = isSelected ? 'border-[#8D99AE]/50' : 'border-[#8D99AE]/15';
-      borderLeft = 'border-l-4 border-l-[#8D99AE]';
-      text = 'text-[#535D70]';
-      labelBg = 'bg-[#8D99AE]/10 text-[#8D99AE]';
+      bg = isSelected ? 'bg-[#E4E2DE]' : 'bg-[#EDEBE7]';
+      border = isSelected ? 'border-[#D9DDD8]' : 'border-[#D9DDD8]';
+      borderLeft = 'border-l-4 border-l-[#8A9490]';
+      text = 'text-[#6A7470]';
+      labelBg = 'bg-[#D9DDD8]/40 text-[#6A7470]';
       break;
   }
   return { bg, border, borderLeft, text, labelBg };
