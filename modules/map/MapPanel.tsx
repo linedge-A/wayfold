@@ -55,11 +55,15 @@ function getLatLng(item: PlaceItem, index: number): google.maps.LatLngLiteral {
   if (RealCoordsMap[item.id]) {
     return RealCoordsMap[item.id];
   }
-  // Check if Coordinates are valid Japan/Kyoto coordinates and not double-digit placeholder mocks
-  if (item.lat !== undefined && item.lng !== undefined && item.lat > 30 && item.lat < 46 && item.lng > 125 && item.lng < 146) {
-    return { lat: item.lat, lng: item.lng };
+  // Real, Google-enriched coordinates are valid ANYWHERE on Earth (lat ±90, lng ±180) — not
+  // Japan-only. `googlePlaceFieldsLoaded` distinguishes real geocoded coords from the normalized
+  // map-space placeholder seeds (which also fall in a valid numeric range), so Paris/NYC/Reykjavík
+  // trips render in the right place instead of snapping back to Kyoto.
+  const realGeo = item.lat != null && item.lng != null && Math.abs(item.lat) <= 90 && Math.abs(item.lng) <= 180;
+  if (realGeo && (item as any).googlePlaceFieldsLoaded) {
+    return { lat: item.lat as number, lng: item.lng as number };
   }
-  // Fallback to Kyoto Center with some offset if not in preset map
+  // Fallback offset for items with no usable coordinates yet (un-enriched placeholders).
   const defaultCenter = { lat: 35.0116, lng: 135.7681 };
   return {
     lat: defaultCenter.lat + ((index % 5) - 2) * 0.008,

@@ -10,7 +10,6 @@
  */
 import type { PlaceItem } from '../../shared/types/index';
 import type { EngineItem } from '../constraint-engine/planner.ts';
-import { SAMPLE_POOL } from './samplePool';
 
 /** Pocket items are structurally PlaceItem plus the extras ingestion attaches (IngestedCandidate):
  *  `signals` (verdict/bestTime), `stopClass`, `priority`. We read those so the planner can rank. */
@@ -23,7 +22,7 @@ export type PocketItem = PlaceItem & {
 
 export interface PoolOptions {
   scheduledIds?: Iterable<string>; // ids already on the board — don't re-propose them
-  fill?: EngineItem[];             // fallback when the pocket yields nothing (default SAMPLE_POOL)
+  fill?: EngineItem[];             // fallback when the pocket yields nothing (default: empty — no demo injection)
 }
 
 /** One PlaceItem → one EngineItem. Near-direct field copy that carries `signals`/`stopClass`/
@@ -64,5 +63,8 @@ export function placeItemsToPool(pocket: { items?: PocketItem[] }[] | undefined,
       pool.push(placeItemToEngine(it));
     }
   }
-  return pool.length ? pool : (opts.fill ?? SAMPLE_POOL);
+  // Empty pocket → an empty pool, so a NEW trip reflects its real destination (the user fills it
+  // via copilot/ingestion) instead of being injected with the Kyoto-specific SAMPLE_POOL demo set
+  // (which produced "Kyoto temples in a Paris trip"). Callers wanting the demo pass `fill` explicitly.
+  return pool.length ? pool : (opts.fill ?? []);
 }
