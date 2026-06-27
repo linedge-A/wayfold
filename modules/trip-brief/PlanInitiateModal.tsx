@@ -8,7 +8,7 @@ import { useState } from 'react';
 import { X, MapPin, Calendar, Users, MessageSquare, Plus, Sparkles, Gauge, Loader2, Check, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { generateFromForm, type GenerateResult, type TripBrief } from './generateFromBrief';
-import { SAMPLE_POOL } from './samplePool';
+import { placeItemToEngine } from './placeItemsToPool';
 import type { EngineItem } from '../constraint-engine/planner.ts';
 
 type Generated = GenerateResult & { brief: TripBrief };
@@ -49,12 +49,31 @@ export default function PlanInitiateModal({ isOpen, onClose, onStartPlanning, po
 
   const handleGenerate = () => {
     setPhase('generating');
-    // The planner is synchronous; a short beat lets the "crafting" state read as real work.
-    setTimeout(() => {
-      const r = generateFromForm({ destinations, dateRange, groupSize, style, notes }, pool ?? SAMPLE_POOL);
+    (async () => {
+      let effectivePool: EngineItem[] = pool && pool.length ? pool : [];
+      // No saved research → ask the AI to discover real places for this destination, then plan from
+      // them (the existing Google enrichment geocodes them once scheduled). No Kyoto demo injection;
+      // if discovery yields nothing the trip is honestly empty for the user to fill.
+      if (!effectivePool.length) {
+        const destination = destinations.map(d => d.trim()).filter(Boolean).join(' → ');
+        if (destination) {
+          try {
+            const res = await fetch('/api/discover', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ destination, style, count: 10 }),
+            });
+            if (res.ok) {
+              const j = await res.json();
+              effectivePool = (j.candidates ?? []).map(placeItemToEngine);
+            }
+          } catch { /* offline / no AI → fall through to an empty plan */ }
+        }
+      }
+      const r = generateFromForm({ destinations, dateRange, groupSize, style, notes }, effectivePool);
       setResult(r);
       setPhase('done');
-    }, 850);
+    })();
   };
 
   const handleReset = () => { setPhase('form'); setResult(null); };
