@@ -5,7 +5,7 @@
 
 // ... (keep initial comments)
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Sparkles, Map, Bot, Compass, Plus, ShieldAlert, Calendar, ChevronUp, ChevronDown, ListChecks } from 'lucide-react';
+import { Sparkles, Map as MapIcon, Bot, Compass, Plus, ShieldAlert, Calendar, ChevronUp, ChevronDown, ListChecks } from 'lucide-react';
 import { APIProvider, useMapsLibrary } from '@vis.gl/react-google-maps';
 // ...
 import TopHeader from './TopHeader';
@@ -1222,7 +1222,7 @@ function AppContent() {
                   : 'bg-[#F7F6F2] hover:bg-[#EDEBE7] text-secondary hover:text-primary'
               }`}
             >
-              <Map className="w-3.5 h-3.5" />
+              <MapIcon className="w-3.5 h-3.5" />
               Map & Research
             </button>
             <button
@@ -1393,7 +1393,7 @@ function AppContent() {
                     >
                       {pocketCollapsed
                         ? <><ListChecks className="w-3.5 h-3.5 text-primary" />Show bucket list<ChevronDown className="w-3.5 h-3.5" /></>
-                        : <><Map className="w-3.5 h-3.5 text-primary" />Show map only<ChevronUp className="w-3.5 h-3.5" /></>
+                        : <><MapIcon className="w-3.5 h-3.5 text-primary" />Show map only<ChevronUp className="w-3.5 h-3.5" /></>
                       }
                     </button>
                   )}
