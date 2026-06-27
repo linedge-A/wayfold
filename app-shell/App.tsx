@@ -104,6 +104,14 @@ function AppContent() {
         pocket,
       };
     });
+    // Fire Google Place enrichment for the freshly generated stops (mirrors the add/insert paths) so
+    // AI-discovered / pocket items get REAL coords — without this the map can't place them and falls
+    // back to Kyoto. Cached per place, so re-running is cheap.
+    for (const d of result.itineraryDays ?? []) {
+      for (const it of d.items ?? []) {
+        if (!(it as any).googlePlaceFieldsLoaded) triggerGoogleMapsEnrichment(it.id, it.title, it.category, 'itinerary');
+      }
+    }
   };
 
   const [viewType, setViewType] = useState<'day' | 'week' | 'month'>('day');

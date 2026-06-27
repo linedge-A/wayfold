@@ -10,6 +10,7 @@
 import { extractCandidates } from './modules/ingestion/extractCandidates';
 import { dispatchIngestion, toSuggestion } from './modules/ingestion/dispatchIngestion';
 import { enqueue, listPending, ack } from './modules/ingestion/captureQueue';
+import { discoverySystemInstruction, parseDiscovery } from './modules/ingestion/discoverPlaces';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import type { BackendConfig } from './server-core';
@@ -108,7 +109,7 @@ async function fetchPageForExtraction(rawUrl: string): Promise<{ text: string; j
 export const wayfoldConfig: BackendConfig = {
   serviceName: 'wayfold',
   // Both the copilot proxy AND the state-changing ingest endpoints get the tighter AI cap + token gate.
-  aiRoutePaths: ['/api/copilot', '/api/ingest'],
+  aiRoutePaths: ['/api/copilot', '/api/ingest', '/api/discover'],
   registerRoutes(app, { ai }) {
 
 // REST Copilot API Proxy
@@ -584,6 +585,44 @@ Return ONLY a JSON array: [{ "title": string, "category": "food"|"sight"|"stay",
     return [];
   }
 }
+
+// AI place DISCOVERY — reuses the SAME `ai` client. Seeds a NEW trip's pool from its destination
+// when the user has no saved research (deterministic generation has nothing to schedule otherwise).
+async function geminiDiscoverPlaces(destination: string, opts: { count?: number; style?: string; interests?: string[] }): Promise<any[]> {
+  if (!ai || !destination) return [];
+  try {
+    const r = await ai.models.generateContent({
+      model: process.env.GEMINI_FLASH_MODEL || 'gemini-flash-latest',
+      contents: `Destination: ${destination}`,
+      config: { systemInstruction: discoverySystemInstruction(destination, opts), temperature: 0.5 },
+    });
+    return parseDiscovery(r.text || '', destination);
+  } catch {
+    return [];
+  }
+}
+
+// POST /api/discover { destination, style?, interests?, count? } → { candidates: PlaceItem[] }.
+// The client calls this when the Research Pocket is empty, seeds the generation pool with the
+// result, enriches via Google Places (real coords), and plans — so a new trip is populated for its
+// real destination instead of coming out empty.
+app.post('/api/discover', async (req, res) => {
+  const { destination, style, interests, count } = req.body || {};
+  if (!destination || typeof destination !== 'string') {
+    return res.status(400).json({ candidates: [], message: 'A destination is required.' });
+  }
+  const candidates = await geminiDiscoverPlaces(destination, {
+    style: typeof style === 'string' ? style : undefined,
+    interests: Array.isArray(interests) ? interests.filter((i: unknown) => typeof i === 'string') : undefined,
+    count: typeof count === 'number' ? Math.max(4, Math.min(20, count)) : undefined,
+  });
+  return res.json({
+    candidates,
+    message: candidates.length
+      ? `Discovered ${candidates.length} places to start your ${destination} trip — refine them in the Pocket, then generate.`
+      : 'Could not auto-discover places (no AI key configured, or none came back). Paste some research or ask the copilot for ideas.',
+  });
+});
 
 // Surface-agnostic ingestion endpoint. The copilot paste path, a forward-to-inbox webhook, and the
 // future Chrome extension all POST an IngestionRequest here. Runs the shared deterministic core
