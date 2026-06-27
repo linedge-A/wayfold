@@ -44,6 +44,14 @@ export const placeItemToEngine = (p: PocketItem): EngineItem => ({
   pinState: p.pinState,
   tags: p.tags,
   signals: p.signals,
+  // Carry Google enrichment through so a server-resolved place (exact coords + placeId from
+  // /api/discover) keeps its data and the client's by-name re-search is skipped (googlePlaceFieldsLoaded).
+  placeId: (p as any).placeId,
+  rating: p.rating,
+  userRatingCount: p.userRatingCount,
+  website: p.website,
+  formattedAddress: p.formattedAddress,
+  googlePlaceFieldsLoaded: p.googlePlaceFieldsLoaded,
 });
 
 /**

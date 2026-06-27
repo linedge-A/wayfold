@@ -602,20 +602,60 @@ async function geminiDiscoverPlaces(destination: string, opts: { count?: number;
   }
 }
 
+// Resolve one model-named place to a REAL Google place (exact coords + place_id + details) via the
+// Places API (New) Text Search, server-side with the platform key. This makes /api/discover
+// authoritative: the model proposes names, Google pins them — so the client doesn't have to re-search
+// by name (fuzzy, billable, can match the wrong place) and the map/engine get exact coords up front.
+// Best-effort: returns null on any miss so discovery still works (coarse) without it.
+const PLACES_KEY = () => process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY || '';
+async function resolvePlaceDetails(name: string, area: string, destination: string): Promise<any | null> {
+  const key = PLACES_KEY();
+  if (!key || !name) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const resp = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST', signal: ctrl.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': key,
+        'X-Goog-FieldMask': 'places.id,places.location,places.rating,places.userRatingCount,places.formattedAddress,places.regularOpeningHours.weekdayDescriptions,places.priceLevel,places.websiteUri',
+      },
+      body: JSON.stringify({ textQuery: `${name}, ${[area, destination].filter(Boolean).join(', ')}`, maxResultCount: 1 }),
+    });
+    if (!resp.ok) return null;
+    const p = (await resp.json())?.places?.[0];
+    if (!p?.location) return null;
+    const hours = p.regularOpeningHours?.weekdayDescriptions?.[0]?.replace(/^[A-Za-z]+:\s*/, '');
+    return {
+      placeId: p.id, lat: p.location.latitude, lng: p.location.longitude,
+      rating: p.rating, userRatingCount: p.userRatingCount, formattedAddress: p.formattedAddress,
+      openingHours: hours, priceLevel: p.priceLevel, website: p.websiteUri,
+      googlePlaceFieldsLoaded: true,
+    };
+  } catch { return null; } finally { clearTimeout(timer); }
+}
+
 // POST /api/discover { destination, style?, interests?, count? } → { candidates: PlaceItem[] }.
 // The client calls this when the Research Pocket is empty, seeds the generation pool with the
-// result, enriches via Google Places (real coords), and plans — so a new trip is populated for its
-// real destination instead of coming out empty.
+// result (now Google-resolved with exact coords), and plans — so a new trip is populated, placed on
+// the map, and routable for its real destination instead of coming out empty/coordinate-less.
 app.post('/api/discover', async (req, res) => {
   const { destination, style, interests, count } = req.body || {};
   if (!destination || typeof destination !== 'string') {
     return res.status(400).json({ candidates: [], message: 'A destination is required.' });
   }
-  const candidates = await geminiDiscoverPlaces(destination, {
+  const raw = await geminiDiscoverPlaces(destination, {
     style: typeof style === 'string' ? style : undefined,
     interests: Array.isArray(interests) ? interests.filter((i: unknown) => typeof i === 'string') : undefined,
     count: typeof count === 'number' ? Math.max(4, Math.min(20, count)) : undefined,
   });
+  // Pin each to a real Google place (exact coords/place_id). Best-effort, in parallel; a miss keeps
+  // the model's name + area so the area-based engine fallback still works.
+  const candidates = await Promise.all(raw.map(async (c: any) => {
+    const d = await resolvePlaceDetails(c.title, c.area, destination);
+    return d ? { ...c, ...d } : c;
+  }));
   return res.json({
     candidates,
     message: candidates.length
@@ -637,21 +677,39 @@ app.post('/api/ingest', async (req, res) => {
     return res.status(400).json({ message: 'Invalid ingestion request.' });
   }
 
-  if (result.bookings.length || result.candidates.length) {
+  // A booking is authoritative + never goes to the model — return immediately.
+  if (result.bookings.length) {
     const sug = toSuggestion(result);
     return res.json({ message: sug.message, suggestion: sug.suggestion, bookings: result.bookings, candidates: result.candidates });
   }
 
-  if (request.rawText) {
-    const aiPlaces = await geminiExtractPlaces(request.rawText).catch(() => []);
+  // Prose recall: the deterministic phrase extractor misses places it can't pattern-match
+  // ("Pastéis de Belém") and truncates others, so for free text we ALSO run the AI extractor and
+  // UNION the two by title — deterministic entries win (they carry verdict/best-time signals), AI
+  // fills the gaps. (jsonld/booking paths stay deterministic-only; they're already exact.)
+  const isProse = !!request.rawText && (request.content === 'text' || request.sourceType === 'blog' || !request.content);
+  if (ai && isProse) {
+    const aiPlaces = await geminiExtractPlaces(String(request.rawText)).catch(() => []);
     if (aiPlaces.length) {
-      return res.json({
-        message: `Extracted ${aiPlaces.length} place${aiPlaces.length === 1 ? '' : 's'} with AI assist — staged in your Pocket.`,
-        suggestion: { type: 'Smart Add', title: `Import ${aiPlaces.length} places`, description: 'AI-extracted from your text.', actionLabel: `Add ${aiPlaces.length} to Pocket`, itemsToAdd: aiPlaces },
-        candidates: aiPlaces,
-        bookings: [],
-      });
+      const norm = (s: string) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      const merged = [...result.candidates];
+      for (const p of aiPlaces) {
+        const key = norm(p.title);
+        if (!key) continue;
+        // Dup if an existing title contains/is-contained-by this one (the deterministic parser often
+        // truncates: "Miradouro" vs "Miradouro da Senhora do Monte"). On overlap, upgrade the existing
+        // entry to the fuller title but KEEP its verdict/best-time signals; otherwise append.
+        const dup = merged.find((c: any) => { const k = norm(c.title); return k === key || k.includes(key) || key.includes(k); });
+        if (!dup) { merged.push(p); continue; }
+        if (norm(p.title).length > norm(dup.title).length) dup.title = p.title;
+      }
+      result.candidates = merged;
     }
+  }
+
+  if (result.candidates.length) {
+    const sug = toSuggestion(result);
+    return res.json({ message: sug.message, suggestion: sug.suggestion, bookings: result.bookings, candidates: result.candidates });
   }
 
   return res.json({ message: result.warnings[0] || 'No bookings or places found.', bookings: [], candidates: [] });

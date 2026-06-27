@@ -41,6 +41,7 @@ export interface PlaceItem {
   reservable?: boolean;
   editorialSummary?: string;
   formattedAddress?: string;
+  placeId?: string;            // Google Place id — set when a place is resolved server-side (/api/discover)
   googlePlaceFieldsLoaded?: boolean;
 }
 
