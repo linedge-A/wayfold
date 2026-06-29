@@ -2,7 +2,7 @@
  * Phase-3 harness: generate FROM the Research Pocket.
  * Run: node_modules/.bin/tsx modules/trip-brief/run-pocket.ts
  * Asserts: must-sees land · skip-verdict excluded · already-scheduled deduped · overflow returns ·
- *          empty pocket falls back to the sample (never an empty trip).
+ *          empty pocket yields an empty pool (no Kyoto demo injection) unless a `fill` is passed.
  */
 import { placeItemsToPool, type PocketItem } from './placeItemsToPool';
 import { generateFromBrief, type TripBrief } from './generateFromBrief';
@@ -30,12 +30,16 @@ const sched = r.itineraryDays.flatMap(d => d.items.map(i => i.id as string));
 r.itineraryDays.forEach(d => console.log(`  ${d.label} · ${d.areaSummary}: ${d.items.map(i => i.title).join(', ')}`));
 console.log('overflow →', r.pocket.map(p => p.id).join(', ') || '(none)');
 
-const fb = placeItemsToPool([], {});
+const emptyNoFill = placeItemsToPool([], {});
+const emptyWithFill = placeItemsToPool([], { fill: pool });
 const checks: [string, boolean][] = [
   ['must-sees scheduled', ['kiyomizu', 'fushimi'].every(id => sched.includes(id))],
   ['skip-verdict NOT scheduled', !sched.includes('trap')],
   ['already-scheduled deduped from pool', !pool.some(p => p.id === 'onboard')],
-  ['empty pocket → sample fallback (non-empty)', fb.length > 0],
+  // Kyoto-in-Paris guard: an empty pocket must NOT inject a demo set — it yields an empty pool…
+  ['empty pocket → empty pool (no demo injection)', emptyNoFill.length === 0],
+  // …unless the caller explicitly opts into a fallback via `fill`.
+  ['empty pocket + explicit fill → uses fill', emptyWithFill.length === pool.length],
 ];
 console.log('\nCHECKS');
 let ok = true;
