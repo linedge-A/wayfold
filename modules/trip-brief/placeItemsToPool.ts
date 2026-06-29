@@ -72,7 +72,8 @@ export function placeItemsToPool(pocket: { items?: PocketItem[] }[] | undefined,
     }
   }
   // Empty pocket → an empty pool, so a NEW trip reflects its real destination (the user fills it
-  // via copilot/ingestion) instead of being injected with the Kyoto-specific SAMPLE_POOL demo set
-  // (which produced "Kyoto temples in a Paris trip"). Callers wanting the demo pass `fill` explicitly.
+  // via copilot/ingestion) instead of being injected with a hardcoded demo set (the old Kyoto
+  // sample pool, which produced "Kyoto temples in a Paris trip"). Callers wanting a fallback pass
+  // `fill` explicitly.
   return pool.length ? pool : (opts.fill ?? []);
 }
